@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.audio import router as audio_router
 from app.api.v1.documents import router as documents_router
+from app.api.v1.export import router as export_router
 from app.api.v1.prompts import router as prompts_router
 from app.api.v1.text import router as text_router
 from app.schemas.health import HealthResponse
@@ -12,6 +13,7 @@ router.include_router(audio_router, prefix="/api/v1")
 router.include_router(text_router, prefix="/api/v1")
 router.include_router(prompts_router, prefix="/api/v1")
 router.include_router(analysis_router, prefix="/api/v1")
+router.include_router(export_router, prefix="/api/v1")
 
 
 @router.get("/", summary="Estado del servicio")

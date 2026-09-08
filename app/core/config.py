@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     MAX_AUDIO_SIZE_MB: int = 200
     MAX_TEXT_CHARACTERS: int = 5000000
     MAX_ANALYSIS_INPUT_TOKENS: int = 900000
+    MAX_EXPORT_CHARACTERS: int = 2000000
 
     @property
     def max_document_size_bytes(self) -> int:

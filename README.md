@@ -19,6 +19,7 @@ hitchings-documentos/
 │   │       ├── analysis.py   # Endpoint de análisis documental con Gemini
 │   │       ├── audio.py      # Endpoint de transcripción de audio
 │   │       ├── documents.py  # Endpoint de extracción de documentos
+│   │       ├── export.py     # Endpoint de exportación a Word (.docx)
 │   │       ├── prompts.py    # Catálogo de prompts configurados
 │   │       └── text.py       # Preparación de texto pegado
 │   ├── core/         # Configuración central (Pydantic Settings) y logging
@@ -34,6 +35,7 @@ hitchings-documentos/
 │   │   ├── analysis.py   # Schemas para análisis y structured outputs
 │   │   ├── audio.py      # Schemas para transcripción y segmentos
 │   │   ├── documents.py  # Schemas para extracción documental
+│   │   ├── export.py     # Schemas para exportación a Word
 │   │   ├── health.py     # Schema para healthcheck
 │   │   ├── prompts.py    # Schemas para catálogo y peticiones de análisis
 │   │   └── text.py       # Schemas para preparación de texto
@@ -46,6 +48,7 @@ hitchings-documentos/
 │   │   ├── gemini_client.py           # Wrapper oficial SDK google-genai
 │   │   ├── prompt_service.py          # Gestión y consulta del catálogo de prompts
 │   │   ├── text_service.py            # Validación y normalización de texto
+│   │   ├── word_export_service.py     # Generación en memoria de documentos Word (.docx)
 │   │   └── extractors/                # Extractores por formato
 │   │       ├── __init__.py
 │   │       ├── base.py
@@ -59,13 +62,15 @@ hitchings-documentos/
 │   └── main.py       # Entrada FastAPI, ciclo de vida y handlers de error
 ├── scripts/          # Scripts de validación y smoke tests manuales
 │   ├── smoke_test_gemini_analysis.py # Smoke test real de análisis documental
-│   └── smoke_test_gemini_audio.py    # Smoke test real de transcripción de audio
+│   ├── smoke_test_gemini_audio.py    # Smoke test real de transcripción de audio
+│   └── verify_word_export.py         # Verificación programática de exportación Word
 ├── tests/            # Tests automatizados (pytest, 100% mocks)
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_analysis.py  # Tests de análisis y structured outputs (Gemini mockeado)
 │   ├── test_audio.py     # Tests de transcripción (Gemini mockeado)
 │   ├── test_documents.py # Tests de extracción documental
+│   ├── test_export.py    # Tests de exportación a Word (.docx)
 │   ├── test_health.py    # Tests de salud y root
 │   ├── test_prompts.py   # Tests del catálogo de prompts y esquemas
 │   └── test_text.py      # Tests de preparación de texto
@@ -119,6 +124,7 @@ Variables disponibles:
 | `MAX_AUDIO_SIZE_MB` | Límite técnico por archivo de audio (HTTP 413 si se supera) | `200` |
 | `MAX_TEXT_CHARACTERS` | Límite técnico por texto pegado en caracteres (HTTP 413 si se supera) | `5000000` |
 | `MAX_ANALYSIS_INPUT_TOKENS` | Límite operativo de tokens de entrada para análisis individual (HTTP 413) | `900000` |
+| `MAX_EXPORT_CHARACTERS` | Límite técnico para exportación de documentos a Word en caracteres (HTTP 413) | `2000000` |
 
 > **Nota de seguridad:** Nunca subas el archivo `.env` con claves reales al control de versiones. Ya se encuentra excluido en `.gitignore`.
 
@@ -315,7 +321,68 @@ Realiza una única interacción real utilizando un texto sintético breve y no c
 
 ---
 
-### 5. Ingesta y Extracción Documental (`POST /api/v1/documents/extract`)
+### 5. Exportación de Resultados a Word (`POST /api/v1/export/word`)
+
+Permite convertir un resultado de análisis generado por HITCHINGS en un archivo `.docx` profesional y limpio para su descarga inmediata por parte del usuario.
+
+#### Flujo Conceptual
+```text
+ANÁLISIS GEMINI
+      ↓
+AnalysisResponse
+      ↓
+EXPORTACIÓN WORD
+      ↓
+archivo .docx (generado 100% en memoria)
+```
+
+#### Características Técnicas y Directivas de Diseño
+* **Generación 100% en Memoria**: El documento Word se serializa utilizando `io.BytesIO` y se entrega vía `StreamingResponse`. En ningún momento se escriben archivos temporales ni se persiste el documento en disco o base de datos.
+* **Payload Limpio y Desacoplado**: Recibe un esquema específico de exportación (`WordExportRequest`):
+  * `title`: Título principal para encabezar el documento Word.
+  * `content`: Contenido completo en Markdown generado previamente.
+  * `warnings`: Lista opcional de advertencias detectadas.
+  * `metadata`: Metadatos contextuales (`prompt_name`, `model`).
+* **Límite Técnico de Tamaño**: Configurado con `MAX_EXPORT_CHARACTERS` (2.000.000 de caracteres por defecto). Si se supera, se rechaza inmediatamente con **HTTP 413**.
+* **Interpretación de Markdown**:
+  * Encabezados: `#` -> `Heading 1`, `##` -> `Heading 2`, `###` -> `Heading 3`.
+  * Párrafos: Formateados con estilo `Normal`.
+  * Listas de viñetas: `- ` o `* ` -> estilo nativo `List Bullet`.
+  * Listas numeradas: `1. ` -> estilo nativo `List Number`.
+  * Formato inline: Segmentos `**negrita**` y `*cursiva*` interpretados en runs con sus atributos tipográficos correspondientes.
+  * Tablas Markdown: Detecta bloques delimitados con `|` y los convierte en tablas nativas Word con formato `Table Grid` y cabecera en negrita.
+  * Sanitización HTML: Elimina etiquetas HTML embebidas antes del renderizado.
+* **Estilos y Tipografía Profesional**:
+  * Márgenes estándar de 1 pulgada (2.54 cm).
+  * Fuente corporativa estándar ampliamente compatible: `Arial`.
+  * Título destacado con estilo nativo `Title`.
+  * Subtítulo discreto bajo el título: `Tipo de análisis: {prompt_name}` en gris suave (el identificador técnico del modelo de IA se preserva en la API pero no se muestra al usuario final en el cuerpo del Word).
+* **Sección de Advertencias Condicional**: Si `warnings` contiene elementos, añade al final del documento una sección `Advertencias` con estilo `Heading 2` y cada elemento como `List Bullet`. Si la lista está vacía, no se genera la sección.
+* **Pie de Página Discreto**: Incluye en la sección el pie nativo `Generado mediante HITCHINGS`.
+* **Sanitización de Nombres de Archivo**: Genera un nombre de archivo normalizado y seguro a partir del título (eliminación de acentos, minúsculas, reemplazo de caracteres especiales por guiones, límite de 60 caracteres y extensión `.docx`). Si el título no produce un nombre válido, recurre a `hitchings-analisis.docx`.
+* **Confidencialidad en Logs**: Se registran únicamente caracteres procesados, número de advertencias, tamaño final del DOCX en bytes y duración de la generación. Cero contenido textual sensible en los logs.
+
+**Ejemplo de llamada con cURL:**
+```bash
+curl -X POST http://localhost:8000/api/v1/export/word \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Análisis Jurídico del Contrato",
+    "content": "## 1. Antecedentes\nEl contrato fue suscrito el 3 de marzo de 2026...\n\n- Obligación de entrega mensual.\n- Penalización de **500 euros**.",
+    "warnings": [
+      "No consta cláusula de resolución anticipada."
+    ],
+    "metadata": {
+      "prompt_name": "Análisis jurídico",
+      "model": "gemini-3.8-flash"
+    }
+  }' \
+  --output analisis-juridico-del-contrato.docx
+```
+
+---
+
+### 6. Ingesta y Extracción Documental (`POST /api/v1/documents/extract`)
 
 Extrae el contenido textual y metadatos de documentos jurídicos y corporativos en memoria.
 
@@ -331,7 +398,7 @@ curl -X POST http://localhost:8000/api/v1/documents/extract \
 
 ---
 
-### 6. Endpoints de Diagnóstico
+### 7. Endpoints de Diagnóstico
 - **`GET /`**: Estado general del servicio activo.
 - **`GET /health`**: Healthcheck JSON (`{"status": "ok", "service": "hitchings-documentos"}`).
 - **`GET /docs`**: Documentación interactiva Swagger UI.
