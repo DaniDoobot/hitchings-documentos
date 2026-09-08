@@ -1,9 +1,11 @@
 from fastapi import APIRouter
+from app.api.v1.audio import router as audio_router
 from app.api.v1.documents import router as documents_router
 from app.schemas.health import HealthResponse
 
 router = APIRouter()
 router.include_router(documents_router, prefix="/api/v1")
+router.include_router(audio_router, prefix="/api/v1")
 
 
 @router.get("/", summary="Estado del servicio")
