@@ -20,9 +20,17 @@ class AudioTranscribeResponse(BaseModel):
     text: str = Field(..., description="Transcripción completa normalizada")
     word_count: int = Field(..., ge=0, description="Conteo total de palabras del texto transcrito")
     character_count: int = Field(..., ge=0, description="Conteo total de caracteres del texto transcrito")
+    detected_language: str | None = Field(
+        default=None,
+        description="Idioma detectado de forma explícita por el proveedor de IA (null si no está disponible)",
+    )
+    language: str | None = Field(
+        default=None,
+        description="Código BCP-47 de idioma solicitado para la transcripción",
+    )
     segments: List[SpeakerSegment] = Field(
         default_factory=list,
-        description="Lista de segmentos por hablante si hubo diarización disponible",
+        description="Lista de segmentos por hablante si hubo diarización disponible (con identificación de interlocutor y contenido)",
     )
     warnings: List[str] = Field(
         default_factory=list,

@@ -45,16 +45,24 @@ def mock_gemini():
     with patch("app.services.audio_transcription.gemini_client") as mock_client:
         mock_remote_file = MagicMock()
         mock_remote_file.name = "files/test_remote_audio_file_id"
+        mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_remote_audio_file_id"
+        mock_remote_file.mime_type = "audio/mpeg"
         mock_client.upload_file.return_value = mock_remote_file
         mock_client.delete_remote_file.return_value = True
         mock_client.transcribe_audio.return_value = (
             "Se abre la sesión de la vista civil ordinaria.",
-            [SpeakerSegment(speaker="spk_1", text="Se abre la sesión de la vista civil ordinaria.")],
+            [],
+            None,
         )
         yield mock_client
 
 
 def test_transcribe_mp3_valid(client: TestClient, mock_gemini):
+    mock_gemini.transcribe_audio.return_value = (
+        "Se abre la sesión de la vista civil ordinaria.",
+        [SpeakerSegment(speaker="spk_1", text="Se abre la sesión de la vista civil ordinaria.")],
+        None,
+    )
     mp3_bytes = generate_synthetic_mp3()
     response = client.post(
         "/api/v1/audio/transcribe",
@@ -69,6 +77,8 @@ def test_transcribe_mp3_valid(client: TestClient, mock_gemini):
     assert data["content_type"] == "audio/mp3"
     assert data["mode"] == "verbatim"
     assert data["diarization"] is True
+    assert data["detected_language"] is None
+    assert data["language"] is None
     assert data["transcription_model"] == settings.GEMINI_TRANSCRIPTION_MODEL
     assert "Se abre la sesión" in data["text"]
     assert data["word_count"] > 0
@@ -81,7 +91,7 @@ def test_transcribe_mp3_valid(client: TestClient, mock_gemini):
     mock_gemini.delete_remote_file.assert_called_once_with("files/test_remote_audio_file_id")
 
 
-def test_transcribe_wav_valid(client: TestClient, mock_gemini):
+def test_transcribe_wav_valid_default_diarization_false(client: TestClient, mock_gemini):
     wav_bytes = generate_synthetic_wav()
     response = client.post(
         "/api/v1/audio/transcribe",
@@ -93,7 +103,10 @@ def test_transcribe_wav_valid(client: TestClient, mock_gemini):
     assert data["filename"] == "declaracion.wav"
     assert data["extension"] == "wav"
     assert data["content_type"] == "audio/wav"
+    assert data["diarization"] is False
+    assert data["detected_language"] is None
     assert "Se abre la sesión" in data["text"]
+    assert data["segments"] == []
     mock_gemini.delete_remote_file.assert_called_once_with("files/test_remote_audio_file_id")
 
 
@@ -134,7 +147,7 @@ def test_transcribe_file_size_exceeded_returns_413(client: TestClient, monkeypat
 
 
 def test_transcribe_mode_smart_without_diarization(client: TestClient, mock_gemini):
-    mock_gemini.transcribe_audio.return_value = ("Texto limpio en modo smart.", [])
+    mock_gemini.transcribe_audio.return_value = ("Texto limpio en modo smart.", [], None)
     wav_bytes = generate_synthetic_wav()
 
     response = client.post(
@@ -214,7 +227,7 @@ def test_confidentiality_logs_do_not_contain_filename_or_transcribed_text(
     import logging
     sensitive_filename = "grabacion_secreta_reunion_directorio.wav"
     secret_text = "Acuerdo secreto sobre la fusión de empresas 777"
-    mock_gemini.transcribe_audio.return_value = (secret_text, [])
+    mock_gemini.transcribe_audio.return_value = (secret_text, [], None)
     wav_bytes = generate_synthetic_wav()
 
     with caplog.at_level(logging.INFO):
@@ -295,3 +308,194 @@ def test_audio_stream_aborts_early_without_consuming_full_stream():
 
     # Comprobar que abortó al cruzar 250 KB y no leyó los 10 chunks
     assert stream.chunks_read <= 4
+
+
+def test_transcribe_language_param_valid(client: TestClient, mock_gemini):
+    wav_bytes = generate_synthetic_wav()
+    response = client.post(
+        "/api/v1/audio/transcribe",
+        files={"file": ("declaracion.wav", wav_bytes, "audio/wav")},
+        params={"language": "es-ES"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["language"] == "es-ES"
+    mock_gemini.transcribe_audio.assert_called_once()
+    _, kwargs = mock_gemini.transcribe_audio.call_args
+    assert kwargs.get("language") == "es-ES"
+
+
+def test_transcribe_language_param_invalid_returns_400(client: TestClient):
+    wav_bytes = generate_synthetic_wav()
+    response = client.post(
+        "/api/v1/audio/transcribe",
+        files={"file": ("declaracion.wav", wav_bytes, "audio/wav")},
+        params={"language": "es_ES_INVALID!!!"},
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert "BCP-47" in data["detail"]
+
+
+def test_gemini_client_transcribe_audio_interactions_api_verbatim():
+    """Verifica la llamada exacta a client.interactions.create en modo verbatim sin diarización."""
+    from app.services.gemini_client import GeminiClient
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "Transcripción literal verbatim."
+    mock_interaction.steps = []
+    mock_interaction.detected_language = None
+    mock_genai_client.interactions.create.return_value = mock_interaction
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_file_id"
+    mock_remote_file.mime_type = "audio/wav"
+
+    text, segments, detected_lang = client.transcribe_audio(
+        remote_file=mock_remote_file,
+        mode="verbatim",
+        diarization=False,
+    )
+
+    assert text == "Transcripción literal verbatim."
+    assert segments == []
+    assert detected_lang is None
+
+    mock_genai_client.interactions.create.assert_called_once()
+    call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
+    assert call_kwargs["model"] == settings.GEMINI_TRANSCRIPTION_MODEL
+    assert call_kwargs["input"] == [
+        {"type": "audio", "uri": mock_remote_file.uri, "mime_type": "audio/wav"}
+    ]
+    assert call_kwargs["generation_config"] == {
+        "transcription_config": {
+            "mode": {"type": "verbatim"},
+        }
+    }
+    # Asegurar que NO se hayan solicitado word timestamps
+    assert "timestamp_granularities" not in call_kwargs["generation_config"]["transcription_config"]["mode"]
+
+
+def test_gemini_client_transcribe_audio_interactions_api_verbatim_with_diarization():
+    """Verifica client.interactions.create con verbatim y diarization_mode='speaker'."""
+    from app.services.gemini_client import GeminiClient
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "Interlocutor 1 y 2 hablando."
+
+    # Simular estructura de steps devuelta por Interactions API con diarización
+    content1 = MagicMock()
+    content1.speaker = "spk_1"
+    content1.text = "Buenos días señoría."
+    content1.annotations = None
+
+    content2 = MagicMock()
+    content2.speaker = "spk_2"
+    content2.text = "Tiene la palabra la defensa."
+    content2.annotations = None
+
+    step = MagicMock()
+    step.content = [content1, content2]
+    mock_interaction.steps = [step]
+    mock_interaction.detected_language = None
+
+    mock_genai_client.interactions.create.return_value = mock_interaction
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_file_id"
+    mock_remote_file.mime_type = "audio/mp3"
+
+    text, segments, detected_lang = client.transcribe_audio(
+        remote_file=mock_remote_file,
+        mode="verbatim",
+        diarization=True,
+        language="es",
+    )
+
+    assert text == "Interlocutor 1 y 2 hablando."
+    assert len(segments) == 2
+    assert segments[0].speaker == "spk_1"
+    assert segments[0].text == "Buenos días señoría."
+    assert segments[1].speaker == "spk_2"
+    assert segments[1].text == "Tiene la palabra la defensa."
+    assert detected_lang is None
+
+    call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
+    assert call_kwargs["generation_config"] == {
+        "transcription_config": {
+            "mode": {
+                "type": "verbatim",
+                "diarization_mode": "speaker",
+            },
+            "language_codes": ["es"],
+        }
+    }
+    # No se solicitan word timestamps
+    assert "timestamp_granularities" not in call_kwargs["generation_config"]["transcription_config"]["mode"]
+
+
+def test_gemini_client_transcribe_audio_interactions_api_smart():
+    """Verifica client.interactions.create en modo smart."""
+    from app.services.gemini_client import GeminiClient
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "Texto limpio en modo smart."
+    mock_interaction.steps = []
+    mock_interaction.detected_language = "es"
+
+    mock_genai_client.interactions.create.return_value = mock_interaction
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_file_id"
+    mock_remote_file.mime_type = "audio/ogg"
+
+    text, segments, detected_lang = client.transcribe_audio(
+        remote_file=mock_remote_file,
+        mode="smart",
+        diarization=False,
+    )
+
+    assert text == "Texto limpio en modo smart."
+    assert segments == []
+    assert detected_lang == "es"
+
+    call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
+    assert call_kwargs["generation_config"] == {
+        "transcription_config": {
+            "mode": "smart",
+        }
+    }
+
+
+def test_gemini_client_duration_exceeded_error_mapping():
+    """Verifica que el error de duración máxima de Gemini se mapea a un mensaje amigable."""
+    from google.genai.errors import APIError
+    from app.services.gemini_client import GeminiClient, GeminiProviderError
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_genai_client.interactions.create.side_effect = APIError(
+        code=400,
+        response_json={"error": {"message": "Audio duration exceeds maximum supported length (3600s)"}},
+    )
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "uri"
+    mock_remote_file.mime_type = "audio/wav"
+
+    with pytest.raises(GeminiProviderError) as exc_info:
+        client.transcribe_audio(remote_file=mock_remote_file, mode="verbatim", diarization=True)
+
+    assert "duración máxima" in str(exc_info.value)
+    assert "30 minutos" in str(exc_info.value)
+

@@ -31,12 +31,13 @@ class GeminiClient:
 
     def get_client(self) -> genai.Client:
         """Inicializa u obtiene el cliente de Google GenAI de forma perezosa."""
+        if self._client is not None:
+            return self._client
         if not settings.GEMINI_API_KEY:
             raise GeminiConfigurationError(
                 "La clave GEMINI_API_KEY no está configurada en las variables de entorno."
             )
-        if self._client is None:
-            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return self._client
 
     def upload_file(self, file_path: str, mime_type: str) -> types.File:
@@ -76,74 +77,131 @@ class GeminiClient:
         self,
         remote_file: types.File,
         mode: str = "verbatim",
-        diarization: bool = True,
-    ) -> Tuple[str, List[SpeakerSegment]]:
+        diarization: bool = False,
+        language: str | None = None,
+    ) -> Tuple[str, List[SpeakerSegment], str | None]:
         """
-        Invoca el modelo de transcripción de Gemini.
-        Retorna (texto_completo, lista_segmentos_hablantes).
+        Invoca el modelo de transcripción de Gemini mediante la Interactions API oficial actual.
+        Retorna (texto_completo, lista_segmentos_hablantes, detected_language).
         """
         client = self.get_client()
 
-        # Determinar modo oficial
-        mode_enum = (
-            types.AudioTranscriptionConfigMode.VERBATIM
-            if mode == "verbatim"
-            else types.AudioTranscriptionConfigMode.SMART
-        )
+        # Construir configuración de transcripción según la API actual
+        transcription_config: dict = {}
+        if mode == "verbatim":
+            if diarization:
+                transcription_config["mode"] = {
+                    "type": "verbatim",
+                    "diarization_mode": "speaker",
+                }
+            else:
+                transcription_config["mode"] = {
+                    "type": "verbatim",
+                }
+        elif mode == "smart":
+            transcription_config["mode"] = "smart"
 
-        # Diarización solo es compatible con VERBATIM
-        use_diarization = diarization if mode == "verbatim" else False
+        if language:
+            transcription_config["language_codes"] = [language]
 
-        transcription_config = types.AudioTranscriptionConfig(
-            mode=mode_enum,
-            diarization=use_diarization,
-        )
+        generation_config = {
+            "transcription_config": transcription_config,
+        }
 
-        generate_config = types.GenerateContentConfig(
-            audio_transcription_config=transcription_config,
-        )
+        # Preparar payload de entrada conforme al estándar de Interactions API
+        file_uri = getattr(remote_file, "uri", None)
+        file_mime = getattr(remote_file, "mime_type", None) or "audio/mpeg"
+
+        input_payload = [
+            {
+                "type": "audio",
+                "uri": file_uri,
+                "mime_type": file_mime,
+            }
+        ]
 
         try:
-            response = client.models.generate_content(
+            interaction = client.interactions.create(
                 model=settings.GEMINI_TRANSCRIPTION_MODEL,
-                contents=[remote_file],
-                config=generate_config,
+                input=input_payload,
+                generation_config=generation_config,
             )
         except APIError as exc:
             logger.error("Error retornado por Gemini durante la transcripción: %s", exc)
+            exc_msg = str(exc).lower()
+            if "duration" in exc_msg or "too long" in exc_msg or "exceeds maximum" in exc_msg:
+                max_duration = "30 minutos (con diarización)" if diarization else "1 hora"
+                raise GeminiProviderError(
+                    f"El audio excede la duración máxima permitida por Gemini para el modo seleccionado ({max_duration})."
+                ) from exc
             raise GeminiProviderError("El proveedor de transcripción devolvió un error al procesar el audio.") from exc
         except Exception as exc:
             logger.error("Fallo de comunicación con Gemini: %s", exc, exc_info=True)
             raise GeminiProviderError("No se pudo completar la transcripción con el proveedor de IA.") from exc
 
-        if not response or not response.text:
+        # Extraer texto de la respuesta
+        full_text = getattr(interaction, "output_text", None)
+        if not full_text and hasattr(interaction, "steps") and interaction.steps:
+            # Fallback en caso de que output_text esté vacío pero haya texto en steps
+            text_parts: List[str] = []
+            for step in interaction.steps:
+                contents = getattr(step, "content", []) or []
+                for content in contents:
+                    txt = getattr(content, "text", None)
+                    if txt:
+                        text_parts.append(txt)
+            if text_parts:
+                full_text = " ".join(text_parts)
+
+        if not full_text or not full_text.strip():
             logger.warning("Gemini no devolvió texto de transcripción.")
             raise GeminiEmptyResponseError(
                 "El modelo de IA procesó el audio pero no detectó contenido hablado transcribible."
             )
 
-        full_text = response.text.strip()
+        full_text = full_text.strip()
         segments: List[SpeakerSegment] = []
 
-        # Extraer información de hablantes si se devolvió en la estructura de candidatos
-        if use_diarization and response.candidates:
-            for candidate in response.candidates:
-                if not candidate.content or not candidate.content.parts:
-                    continue
-                for part in candidate.content.parts:
-                    at = getattr(part, "audio_transcription", None)
-                    if at:
-                        speaker = getattr(at, "speaker_label", None)
-                        seg_text = getattr(at, "text", None)
-                        if speaker and seg_text:
-                            segments.append(
-                                SpeakerSegment(
-                                    speaker=str(speaker),
-                                    text=str(seg_text).strip(),
-                                )
-                            )
+        # Extraer diarización real si se solicitó
+        if diarization and hasattr(interaction, "steps") and interaction.steps:
+            for step in interaction.steps:
+                contents = getattr(step, "content", []) or []
+                for content in contents:
+                    speaker_id = getattr(content, "speaker", None)
+                    content_text = getattr(content, "text", None)
 
-        return full_text, segments
+                    # Inspeccionar también annotations si speaker no vino como atributo directo
+                    if not speaker_id and hasattr(content, "annotations") and content.annotations:
+                        for ann in content.annotations:
+                            raw = getattr(ann, "raw", None)
+                            if isinstance(raw, dict) and "speaker" in raw:
+                                speaker_id = raw.get("speaker")
+                                break
+                            elif hasattr(ann, "speaker"):
+                                speaker_id = getattr(ann, "speaker")
+                                break
+
+                    if speaker_id and content_text:
+                        segments.append(
+                            SpeakerSegment(
+                                speaker=str(speaker_id),
+                                text=str(content_text).strip(),
+                            )
+                        )
+
+        # Extraer detected_language explícito únicamente si el proveedor lo suministra como string real
+        detected_language = None
+        raw_lang = getattr(interaction, "detected_language", None)
+        if isinstance(raw_lang, str) and raw_lang.strip():
+            detected_language = raw_lang.strip()
+        else:
+            usage_meta = getattr(interaction, "usage_metadata", None)
+            if usage_meta is not None and not isinstance(usage_meta, str):
+                meta_lang = getattr(usage_meta, "detected_language", None)
+                if isinstance(meta_lang, str) and meta_lang.strip():
+                    detected_language = meta_lang.strip()
+
+        return full_text, segments, detected_language
 
 
 gemini_client = GeminiClient()

@@ -169,7 +169,8 @@ class AudioTranscriptionService:
         self,
         file: UploadFile,
         mode: str = "verbatim",
-        diarization: bool = True,
+        diarization: bool = False,
+        language: str | None = None,
     ) -> AudioTranscribeResponse:
         """
         Orquesta la validación, almacenamiento temporal seguro, subida a Gemini Files API,
@@ -210,11 +211,12 @@ class AudioTranscriptionService:
             remote_file = self.client.upload_file(temp_path, mime_type=mime_type)
             remote_file_name = getattr(remote_file, "name", None)
 
-            # 5. Transcripción con Gemini
-            raw_text, segments = self.client.transcribe_audio(
+            # 5. Transcripción con Gemini Interactions API
+            raw_text, segments, detected_language = self.client.transcribe_audio(
                 remote_file=remote_file,
                 mode=mode,
                 diarization=diarization,
+                language=language,
             )
 
             # 6. Normalización conservadora de texto (respetando verbatim)
@@ -225,11 +227,12 @@ class AudioTranscriptionService:
 
             # 7. Log técnico seguro (cero nombres de archivo, cero texto, cero PII)
             logger.info(
-                "Transcripción de audio completada | Ext: %s | Tamaño: %d B | Modo: %s | Diarización: %s | Palabras: %d | Tiempo: %.2f ms | Segmentos: %d",
+                "Transcripción de audio completada | Ext: %s | Tamaño: %d B | Modo: %s | Diarización: %s | Idioma sol.: %s | Palabras: %d | Tiempo: %.2f ms | Segmentos: %d",
                 extension,
                 size_bytes,
                 mode,
                 str(diarization),
+                language or "auto",
                 word_count,
                 elapsed_ms,
                 len(segments),
@@ -243,6 +246,8 @@ class AudioTranscriptionService:
                 transcription_model=settings.GEMINI_TRANSCRIPTION_MODEL,
                 mode=mode,
                 diarization=diarization,
+                language=language,
+                detected_language=detected_language,
                 text=normalized_text,
                 word_count=word_count,
                 character_count=character_count,

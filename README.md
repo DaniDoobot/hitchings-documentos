@@ -106,25 +106,36 @@ Variables disponibles:
 
 ### 1. Transcripción de Audio (`POST /api/v1/audio/transcribe`)
 
-Recibe un archivo de audio mediante `multipart/form-data`, valida su formato y tamaño en streaming, procesa el audio con Gemini Files API y devuelve la transcripción y los segmentos de hablantes.
+Recibe un archivo de audio mediante `multipart/form-data`, valida su formato y tamaño en streaming, procesa el audio con la **Gemini Interactions API** oficial (`gemini-3.5-transcribe`) y devuelve la transcripción literal o refinada, junto con metadatos y segmentos de interlocutores.
 
 * **Formatos soportados**: `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`, `.flac`, `.webm`.
 * **Parámetros opcionales (query params)**:
-  * `mode`: `verbatim` (por defecto, máxima fidelidad textual con lo hablado) o `smart` (limpieza de muletillas y formato ligero).
-  * `diarization`: booleano (`true` por defecto). Identificación y etiquetado de interlocutores. *Nota: La diarización solo es compatible con el modo `verbatim`; si se solicita `smart` con `diarization=true` se devolverá HTTP 400.*
-* **Límite de tamaño**: Configurado con `MAX_AUDIO_SIZE_MB` (200 MB por defecto). Si se excede, el servidor aborta inmediatamente la recepción con **HTTP 413**.
+  * `mode`: `verbatim` (por defecto, máxima fidelidad textual con lo hablado) o `smart` (limpieza de muletillas, disfluencias y formato refinado).
+  * `diarization`: booleano (**`false` por defecto**). Identificación y separación de interlocutores (`diarization_mode: "speaker"`).
+    * *Decisión de arquitectura*: Se mantiene en `false` por defecto debido a las limitaciones de duración del proveedor:
+      * **Transcripción estándar sin diarización**: Hasta **1 hora** de audio por petición.
+      * **Transcripción con diarización**: Máximo **30 minutos** de audio por petición.
+      * Dado que HITCHINGS procesa grabaciones extensas de vistas orales y declaraciones judiciales, se prioriza por defecto la ventana de 1 hora.
+    * *Compatibilidad*: La diarización solo es compatible con el modo `verbatim`. Si se solicita `mode="smart"` con `diarization=true`, la API devuelve inmediatamente **HTTP 400 Bad Request**.
+  * `language`: string opcional con código de idioma BCP-47 (ej. `"es"`, `"es-ES"`, `"en-US"`). Si se omite, Gemini aplica autodetección de idioma de forma automática.
+* **Límites de tamaño vs. límites de duración**:
+  * `MAX_AUDIO_SIZE_MB` (200 MB por defecto) es un límite técnico de transporte para proteger la memoria RAM del backend mediante streaming y corte anticipado (**HTTP 413**).
+  * No garantiza por sí solo que Gemini acepte el audio si este supera la duración máxima admitida (1 hora en estándar, 30 minutos con diarización).
+  * Si Gemini rechaza el audio por superar la duración, el error es capturado y mapeado a un mensaje de error claro sin exponer trazas internas.
+* **Timestamps**: No se solicitan marcas temporales palabra por palabra (`timestamp_granularities`) para optimizar rendimiento y tiempo de respuesta. La diarización devuelve de forma limpia y fiable el identificador del interlocutor (`spk_1`, `spk_2`, etc.) y el contenido asociado.
 
 #### Flujo Técnico de Privacidad y Eliminación de Audios
 ```text
-Usuario → Backend HITCHINGS → Gemini Files API → Transcripción → Eliminación Remota Inmediata
+Usuario → Backend HITCHINGS → Gemini Files API → Interactions API → Eliminación Remota Inmediata
 ```
 * **Sin almacenamiento permanente**: HITCHINGS no almacena de forma persistente los archivos de audio.
-* **Archivos temporales locales**: Si se genera un archivo temporal local en el disco del servidor para la transferencia, se elimina siempre en un bloque `finally`, tanto si la llamada concluye con éxito como si se produce un error.
-* **Eliminación remota garantizada**: El archivo subido a Gemini Files API se elimina de forma explícita e inmediata tras la transcripción mediante `client.files.delete()`. Si el borrado remoto fallara, se registra una advertencia técnica en los logs sin exponer datos confidenciales.
+* **Archivos temporales locales**: Se escriben en streaming seguro y se eliminan siempre en un bloque `finally`, tanto si la llamada concluye con éxito como ante cualquier excepción.
+* **Eliminación remota garantizada**: El archivo subido a Gemini Files API se elimina de forma explícita e inmediata tras la interacción mediante `client.files.delete(name)`.
+* **Confidencialidad absoluta en logs**: No se registran nombres originales de archivos, ni palabras transcritas, ni datos personales. Solo métricas numéricas técnicas (bytes, duración en ms, recuento de palabras).
 
 **Ejemplo de llamada con cURL:**
 ```bash
-curl -X POST "http://localhost:8000/api/v1/audio/transcribe?mode=verbatim&diarization=true" \
+curl -X POST "http://localhost:8000/api/v1/audio/transcribe?mode=verbatim&diarization=false&language=es-ES" \
   -F "file=@grabacion_vista.mp3"
 ```
 
@@ -137,19 +148,23 @@ curl -X POST "http://localhost:8000/api/v1/audio/transcribe?mode=verbatim&diariz
   "size_bytes": 38492013,
   "transcription_model": "gemini-3.5-transcribe",
   "mode": "verbatim",
-  "diarization": true,
+  "diarization": false,
+  "language": "es-ES",
+  "detected_language": null,
   "text": "Se abre la sesión de la vista civil ordinaria...",
   "word_count": 8432,
   "character_count": 51678,
-  "segments": [
-    {
-      "speaker": "spk_1",
-      "text": "Se abre la sesión de la vista civil ordinaria."
-    }
-  ],
+  "segments": [],
   "warnings": []
 }
 ```
+
+#### Smoke Test de Verificación Real
+Para ejecutar una prueba manual real contra Gemini (cuando se disponga de `GEMINI_API_KEY`):
+```bash
+python scripts/smoke_test_gemini_audio.py
+```
+Este script genera un audio sintetizado en memoria, lo sube a Files API, invoca Interactions API, valida la respuesta y destruye de forma garantizada todos los recursos remotos y locales. No genera costes significativos ni forma parte de las suites automáticas.
 
 ---
 
