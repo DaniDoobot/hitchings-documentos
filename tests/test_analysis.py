@@ -583,31 +583,59 @@ def test_analysis_missing_api_key_returns_503(client: TestClient):
         assert "No API key configured" in response.json()["detail"]
 
 
-# 33. Fallback en cálculo de tokens cuando API count_tokens falla
-def test_analysis_token_count_fallback_on_api_error(client: TestClient, mock_gemini_analysis):
+# 33. Fallo de count_tokens devuelve error controlado (HTTP 502) y no ejecuta interactions.create
+def test_analysis_count_tokens_failure_returns_502_and_skips_create(client: TestClient, mock_gemini_analysis):
     genai_client = mock_gemini_analysis["genai_client"]
-    genai_client.models.count_tokens.side_effect = Exception("API count_tokens not available")
+    genai_client.models.count_tokens.side_effect = APIError(
+        code=500,
+        response_json={"error": {"message": "Internal token count service error"}},
+    )
 
     payload = {
-        "text": "Texto para probar el fallback de aproximación 1 token / 3.5 caracteres.",
+        "text": "Texto legal válido para análisis.",
         "prompt_id": "executive-summary",
     }
     response = client.post("/api/v1/analysis", json=payload)
-    assert response.status_code == 200
-    assert genai_client.interactions.create.called
+    assert response.status_code == 502
+    assert "No se pudo verificar el número de tokens con el proveedor de IA." in response.json()["detail"]
+    # Comprobar taxativamente que interactions.create NO se ejecutó
+    genai_client.interactions.create.assert_not_called()
 
 
-# 34. Rechazo si el cálculo por fallback de tokens supera el límite (HTTP 413)
-def test_analysis_token_count_fallback_exceeds_limit_returns_413(client: TestClient, mock_gemini_analysis):
+# 34. Ausencia total de fallback aproximado por caracteres ante fallo en count_tokens
+def test_analysis_no_approximate_character_fallback_when_count_tokens_fails(client: TestClient, mock_gemini_analysis):
     genai_client = mock_gemini_analysis["genai_client"]
-    genai_client.models.count_tokens.side_effect = Exception("API count_tokens not available")
+    # Simular fallo inesperado en count_tokens
+    genai_client.models.count_tokens.side_effect = Exception("Remote count_tokens unreachable")
 
-    with patch.object(settings, "MAX_ANALYSIS_INPUT_TOKENS", 10):
-        payload = {
-            "text": "Texto suficientemente largo como para exceder 10 tokens por cálculo de fallback.",
-            "prompt_id": "executive-summary",
-        }
-        response = client.post("/api/v1/analysis", json=payload)
-        assert response.status_code == 413
-        assert "límite operativo de tokens" in response.json()["detail"]
-        genai_client.interactions.create.assert_not_called()
+    # Texto muy corto (50 caracteres) que con fallback antiguo hubiera sido ~14 tokens y habría pasado
+    payload = {
+        "text": "Texto breve de 50 caracteres para análisis directo.",
+        "prompt_id": "executive-summary",
+    }
+    response = client.post("/api/v1/analysis", json=payload)
+    # Debe fallar con 502 controlado en vez de continuar mediante estimación por caracteres
+    assert response.status_code == 502
+    assert "No se pudo verificar el número de tokens" in response.json()["detail"]
+    genai_client.interactions.create.assert_not_called()
+
+
+# 35. Scripts de smoke test y logs no exponen metadatos de la clave de API
+def test_smoke_scripts_do_not_expose_api_key_metadata():
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parent.parent
+    scripts_to_check = [
+        repo_root / "scripts" / "smoke_test_gemini_analysis.py",
+        repo_root / "scripts" / "smoke_test_gemini_audio.py",
+    ]
+
+    for script_path in scripts_to_check:
+        content = script_path.read_text(encoding="utf-8")
+        # No debe haber referencias a longitud de api_key, prefijos, sufijos o máscaras parciales
+        assert "len(api_key)" not in content, f"len(api_key) encontrado en {script_path.name}"
+        assert "masked_key" not in content, f"masked_key encontrado en {script_path.name}"
+        assert "api_key[:" not in content, f"api_key slice/prefijo encontrado en {script_path.name}"
+        assert "api_key[-" not in content, f"api_key slice/sufijo encontrado en {script_path.name}"
+        assert "GEMINI_API_KEY configurada: sí" in content, f"Indicación limpia no encontrada en {script_path.name}"
+

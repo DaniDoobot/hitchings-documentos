@@ -48,8 +48,7 @@ def run_smoke_test(prompt_id: str = "key-points", custom_text: str | None = None
         print("[ERROR] GEMINI_API_KEY no está configurada en .env ni en variables de entorno.")
         sys.exit(1)
 
-    masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
-    print(f"[OK] GEMINI_API_KEY detectada (longitud: {len(api_key)}, formato: {masked_key})")
+    print("[OK] GEMINI_API_KEY configurada: sí")
     print(f"[OK] Modelo de análisis configurado: {settings.GEMINI_ANALYSIS_MODEL}")
     print(f"[OK] Thinking level configurado: {settings.GEMINI_ANALYSIS_THINKING_LEVEL}")
     print(f"[OK] Límite operativo tokens entrada: {settings.MAX_ANALYSIS_INPUT_TOKENS:,}")

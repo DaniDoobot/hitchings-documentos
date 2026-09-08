@@ -48,6 +48,7 @@ def run_smoke_test(audio_path_str: str | None = None):
         print("  3. Ejecute de nuevo:")
         print("     python scripts/smoke_test_gemini_audio.py --audio ruta/a/tu_audio.wav")
         sys.exit(0)
+    print("[OK] GEMINI_API_KEY configurada: sí")
 
     # 2. Comprobación de argumento de audio
     if not audio_path_str:

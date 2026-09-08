@@ -79,10 +79,11 @@ class DocumentAnalysisService:
         """
         Calcula con precisión oficial los tokens totales de entrada
         (system instruction + prompt template + opciones + documento).
+        Si el conteo oficial falla, no se aplica estimación aproximada y
+        se eleva un error controlado de proveedor.
         """
         genai_client = self.client.get_client()
         try:
-            # Invocar la API oficial de conteo de tokens
             response = genai_client.models.count_tokens(
                 model=settings.GEMINI_ANALYSIS_MODEL,
                 contents=[
@@ -91,10 +92,16 @@ class DocumentAnalysisService:
                 ],
             )
             return response.total_tokens or 0
+        except APIError as exc:
+            logger.error("Error de proveedor Gemini durante token preflight: %s", exc)
+            raise GeminiProviderError(
+                "No se pudo verificar el número de tokens con el proveedor de IA."
+            ) from exc
         except Exception as exc:
-            logger.warning("Fallo en token preflight API (%s). Aplicando estimación conservadora.", exc)
-            # Fallback seguro: aproximación de 1 token cada 3.5 caracteres
-            return int((len(system_instruction) + len(user_input)) / 3.5)
+            logger.error("Fallo inesperado al contar tokens con Gemini: %s", exc, exc_info=True)
+            raise GeminiProviderError(
+                "No se pudo verificar el número de tokens con el proveedor de IA."
+            ) from exc
 
     def analyze_document(self, request: AnalysisRequest) -> AnalysisResponse:
         """
