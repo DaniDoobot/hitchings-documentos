@@ -236,3 +236,95 @@ def test_health_and_root_still_work(client: TestClient):
     res_health = client.get("/health")
     assert res_health.status_code == 200
     assert res_health.json() == {"status": "ok", "service": "hitchings-documentos"}
+
+
+def test_confidentiality_logs_do_not_contain_filename_or_text(client: TestClient, caplog):
+    """Verifica que NUNCA se registre el filename ni el texto del documento en los logs."""
+    import logging
+    pdf_bytes = generate_pdf_bytes("Contenido Secreto y Confidencial de Juicio 888", num_pages=1)
+    sensitive_filename = "expediente_secreto_garcia_perez.pdf"
+
+    with caplog.at_level(logging.INFO):
+        response = client.post(
+            "/api/v1/documents/extract",
+            files={"file": (sensitive_filename, pdf_bytes, "application/pdf")},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["filename"] == sensitive_filename
+
+    # Validar que los logs NO contienen el nombre ni el texto sensible
+    assert "expediente_secreto_garcia_perez" not in caplog.text
+    assert "Contenido Secreto y Confidencial" not in caplog.text
+
+    # Validar que los logs SÍ contienen la metadata técnica permitida
+    assert "Extracción completada" in caplog.text
+    assert "Ext: pdf" in caplog.text
+
+
+def test_extract_non_docx_zip_returns_400(client: TestClient):
+    """Verifica que un archivo ZIP genérico que no sea DOCX sea rechazado con HTTP 400."""
+    import zipfile
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, "w") as zf:
+        zf.writestr("sheet1.xml", "<worksheet>fake excel data</worksheet>")
+    fake_zip_bytes = bio.getvalue()
+
+    response = client.post(
+        "/api/v1/documents/extract",
+        files={"file": ("falso.docx", fake_zip_bytes, "application/vnd.openxmlformats")},
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "no es un documento DOCX válido" in data["detail"]
+
+
+def test_extract_binary_file_disguised_as_txt_returns_400(client: TestClient):
+    """Verifica que un archivo binario (con bytes nulos) con extensión .txt sea rechazado con HTTP 400."""
+    binary_bytes = b"CABECERA\x00\x01\x02\x03DATOS_BINARIOS\x00"
+    response = client.post(
+        "/api/v1/documents/extract",
+        files={"file": ("programa.txt", binary_bytes, "text/plain")},
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "binarios" in data["detail"] or "no es un documento de texto plano válido" in data["detail"]
+
+
+def test_chunked_reader_aborts_early():
+    """Verifica que read_upload_file_chunked aborta inmediatamente al superar el límite sin leer todo el stream."""
+    import asyncio
+    from fastapi import UploadFile
+    from app.api.v1.documents import read_upload_file_chunked
+    from app.services.document_extractor import FileSizeExceededError
+
+    class CountingStream(io.BytesIO):
+        def __init__(self, chunk_size: int, total_chunks: int):
+            super().__init__()
+            self.chunk = b"X" * chunk_size
+            self.total_chunks = total_chunks
+            self.chunks_read = 0
+
+        def read(self, size: int = -1):
+            if self.chunks_read < self.total_chunks:
+                self.chunks_read += 1
+                return self.chunk
+            return b""
+
+    # 10 chunks de 100 KB = 1000 KB. Límite: 250 KB
+    stream = CountingStream(chunk_size=100 * 1024, total_chunks=10)
+    upload_file = UploadFile(file=stream, filename="stream_test.pdf")
+
+    async def run_test():
+        try:
+            await read_upload_file_chunked(upload_file, max_bytes=250 * 1024)
+            assert False, "Debería haber lanzado FileSizeExceededError"
+        except FileSizeExceededError:
+            pass
+
+    asyncio.run(run_test())
+
+    # Comprobar que abortó tras leer 3 chunks (300 KB > 250 KB) y no continuó leyendo los 10 chunks
+    assert stream.chunks_read == 3

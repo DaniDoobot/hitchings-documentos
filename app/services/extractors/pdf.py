@@ -9,28 +9,39 @@ class PdfExtractor(BaseExtractor):
     """Extractor de texto para archivos PDF."""
 
     def extract(self, file_bytes: bytes, filename: str) -> ExtractionResult:
+        # Validación mínima de cabecera PDF
+        if not file_bytes.startswith(b"%PDF-") and b"%PDF-" not in file_bytes[:1024]:
+            raise ExtractionError(
+                "El archivo no es un documento PDF válido (cabecera PDF no encontrada)."
+            )
+
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
         except (PdfReadError, Exception) as exc:
-            raise ExtractionError(f"No se pudo leer el archivo PDF '{filename}'. El archivo puede estar dañado o tener un formato inválido.") from exc
+            raise ExtractionError(
+                "No se pudo leer el archivo PDF. El archivo puede estar dañado o tener un formato inválido."
+            ) from exc
 
         if reader.is_encrypted:
-            # Intento de desencriptar si la contraseña es vacía
             try:
                 decrypted = reader.decrypt("")
                 if decrypted == 0:
-                    raise ExtractionError(f"El archivo PDF '{filename}' está protegido por contraseña y no se puede procesar.")
+                    raise ExtractionError(
+                        "El archivo PDF está protegido por contraseña y no se puede procesar."
+                    )
             except Exception as exc:
-                raise ExtractionError(f"El archivo PDF '{filename}' está protegido por contraseña y no se puede procesar.") from exc
+                raise ExtractionError(
+                    "El archivo PDF está protegido por contraseña y no se puede procesar."
+                ) from exc
 
         page_count = len(reader.pages)
         if page_count == 0:
-            raise ExtractionError(f"El archivo PDF '{filename}' no contiene páginas válidas.")
+            raise ExtractionError("El archivo PDF no contiene páginas válidas.")
 
         page_texts: list[str] = []
         empty_pages = 0
 
-        for page_idx, page in enumerate(reader.pages, start=1):
+        for page in reader.pages:
             try:
                 page_text = page.extract_text() or ""
             except Exception:

@@ -1,4 +1,3 @@
-import os
 import time
 from pathlib import Path
 from typing import Dict, Type
@@ -38,8 +37,8 @@ class FileSizeExceededError(Exception):
 class EmptyFileError(Exception):
     """Excepción cuando el archivo recibido está vacío (HTTP 400)."""
 
-    def __init__(self, filename: str):
-        super().__init__(f"El archivo '{filename}' está vacío (0 bytes).")
+    def __init__(self):
+        super().__init__("El archivo enviado está vacío (0 bytes).")
 
 
 class DocumentExtractionService:
@@ -80,6 +79,7 @@ class DocumentExtractionService:
     ) -> DocumentExtractResponse:
         """
         Valida, extrae y normaliza el contenido de un documento en memoria.
+        Por confidencialidad estricta, los logs técnicos NUNCA registran filenames ni contenido.
         """
         start_time = time.perf_counter()
         filename = self.sanitize_filename(raw_filename)
@@ -89,7 +89,7 @@ class DocumentExtractionService:
         # 1. Validar extensión permitida
         if extension not in self.ALLOWED_EXTENSIONS:
             logger.warning(
-                "Intento de subida con formato no permitido. Extension: '%s', Size: %d bytes",
+                "Intento de subida con formato no permitido | Ext: '%s' | Tamaño: %d B",
                 extension,
                 size_bytes,
             )
@@ -97,14 +97,14 @@ class DocumentExtractionService:
 
         # 2. Validar archivo no vacío
         if size_bytes == 0:
-            logger.warning("Intento de subida de archivo vacío: '%s'", filename)
-            raise EmptyFileError(filename)
+            logger.warning("Intento de subida de archivo vacío (0 bytes) | Ext: '%s'", extension)
+            raise EmptyFileError()
 
         # 3. Validar límite técnico de tamaño
         if size_bytes > settings.max_document_size_bytes:
             logger.warning(
-                "Archivo excede el límite de tamaño. Archivo: '%s', Size: %d, Max: %d",
-                filename,
+                "Archivo excede el límite de tamaño | Ext: '%s' | Tamaño: %d B | Máximo: %d B",
+                extension,
                 size_bytes,
                 settings.max_document_size_bytes,
             )
@@ -122,8 +122,13 @@ class DocumentExtractionService:
         except ExtractionError:
             raise
         except Exception as exc:
-            logger.error("Error no esperado en extractor %s para '%s': %s", extension, filename, exc, exc_info=True)
-            raise ExtractionError(f"Error interno procesando el archivo '{filename}'.") from exc
+            logger.error(
+                "Error no esperado en extractor para formato '%s': %s",
+                extension,
+                exc,
+                exc_info=True,
+            )
+            raise ExtractionError("Error interno al procesar el archivo.") from exc
 
         # 6. Normalización conservadora del texto
         normalized_text = normalize_text(extraction_result.text)
@@ -133,10 +138,9 @@ class DocumentExtractionService:
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-        # 8. Log técnico de operación (sin registrar contenido textual ni PII)
+        # 8. Log técnico de operación (sin filename, sin texto, sin PII)
         logger.info(
-            "Extracción completada: '%s' | Ext: %s | Tamaño: %d B | Páginas: %s | Palabras: %d | Tiempo: %.2f ms | Warnings: %d",
-            filename,
+            "Extracción completada | Ext: %s | Tamaño: %d B | Páginas: %s | Palabras: %d | Tiempo: %.2f ms | Warnings: %d",
             extension,
             size_bytes,
             str(extraction_result.page_count) if extraction_result.page_count is not None else "null",
