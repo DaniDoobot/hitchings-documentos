@@ -92,11 +92,13 @@ Variables disponibles:
 | `APP_PORT` | Puerto de escucha del servidor | `8000` |
 | `LOG_LEVEL` | Nivel de logging (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
 | `GEMINI_API_KEY` | Clave de API de Google Gemini (Developer API Key, sin Vertex AI) | *(vacío)* |
-| `GEMINI_TRANSCRIPTION_MODEL` | Modelo de Gemini utilizado para la transcripción | `gemini-3.5-transcribe` |
+| `GEMINI_TRANSCRIPTION_MODEL` | Modelo de Gemini utilizado para la transcripción de audio | `gemini-3.5-transcribe` |
+| `GEMINI_ANALYSIS_MODEL` | Modelo de Gemini previsto para el análisis documental (Bloque 4B) | `gemini-3.8-flash` |
 | `GEMINI_TIMEOUT_SECONDS` | Tiempo límite en segundos para llamadas a Gemini | `300` |
 | `GEMINI_MAX_RETRIES` | Número de reintentos para fallos transitorios | `2` |
 | `MAX_DOCUMENT_SIZE_MB` | Límite técnico por archivo documental (HTTP 413 si se supera) | `25` |
 | `MAX_AUDIO_SIZE_MB` | Límite técnico por archivo de audio (HTTP 413 si se supera) | `200` |
+| `MAX_TEXT_CHARACTERS` | Límite técnico por texto pegado en caracteres (HTTP 413 si se supera) | `5000000` |
 
 > **Nota de seguridad:** Nunca subas el archivo `.env` con claves reales al control de versiones. Ya se encuentra excluido en `.gitignore`.
 
@@ -171,7 +173,72 @@ Este script carga el audio real con voz, lo valida, lo sube a la Files API de Ge
 
 ---
 
-### 2. Ingesta y Extracción Documental (`POST /api/v1/documents/extract`)
+### 2. Preparación de Texto Pegado (`POST /api/v1/text/prepare`)
+
+Tercera vía de entrada de contenido. Permite recibir texto pegado directamente por el usuario en formato JSON, validando su tamaño y contenido, y aplicando normalización conservadora antes del análisis.
+
+* **Payload de entrada (JSON)**:
+  ```json
+  {
+    "text": "Contenido pegado directamente por el usuario..."
+  }
+  ```
+* **Límite técnico**: Configurado con `MAX_TEXT_CHARACTERS` (5.000.000 de caracteres por defecto). Si se supera, se devuelve **HTTP 413**.
+* **Validación**: Rechaza con **HTTP 400** entradas vacías o compuestas únicamente por espacios en blanco.
+* **Respuesta (JSON)**:
+  ```json
+  {
+    "text": "Contenido normalizado...",
+    "word_count": 120,
+    "character_count": 750
+  }
+  ```
+
+---
+
+### 3. Catálogo de Prompts (`GET /api/v1/prompts`)
+
+Permite al frontend consultar los prompts predefinidos y configuraciones de análisis disponibles en HITCHINGS.
+
+* **Listar prompts activos**: `GET /api/v1/prompts`
+  * Parámetro opcional: `?include_inactive=true` (para uso administrativo futuro).
+* **Consultar un prompt específico**: `GET /api/v1/prompts/{prompt_id}`
+  * Devuelve la configuración completa o **HTTP 404** si no existe.
+* **Prompts predefinidos iniciales (IDs estables)**:
+  * `executive-summary`: Resumen ejecutivo orientado a síntesis de propósito, hechos y conclusiones.
+  * `legal-analysis`: Análisis jurídico estructurado (partes, pretensiones, antecedentes, fundamentos, normativa, fallo, contingencias).
+  * `key-points`: Puntos clave priorizados (cifras, fechas, decisiones, obligaciones, riesgos).
+  * `timeline`: Cronología estricta y ordenada de acontecimientos y fechas detectadas.
+  * `custom-analysis`: Plantilla base flexible para análisis guiado por instrucciones personalizadas del usuario.
+
+#### Arquitectura Conceptual del Pipeline de Análisis (Hacia el Bloque 4B)
+```text
+┌─────────────────┐
+│ 1. Documento    ├─┐
+├─────────────────┤ │   ┌──────────────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
+│ 2. Audio        ├─┼──>│ Contenido Textual    │ ──> │ Prompt Elegido       │ ──> │ Gemini Analysis      │ ──> Resultado
+├─────────────────┤ │   │ Normalizado          │     │ + Opciones de Salida │     │ (gemini-3.8-flash)   │
+│ 3. Texto Pegado ├─┘   └──────────────────────┘     └──────────────────────┘     └──────────────────────┘
+└─────────────────┘
+```
+
+#### Prevención de Prompt Injection Documental
+En el pipeline de análisis con LLM, el contenido textual del documento debe ser tratado estrictamente como **DATOS PUROS**, jamás como instrucciones del sistema:
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ SYSTEM INSTRUCTIONS (Rol del modelo, directrices inviolables)│
+├─────────────────────────────────────────────────────────────┤
+│ PROMPT TEMPLATE (Instrucciones estructuradas del análisis)  │
+├─────────────────────────────────────────────────────────────┤
+│ USER ANALYSIS INSTRUCTIONS (Instrucciones opcionales)        │
+├─────────────────────────────────────────────────────────────┤
+│ DOCUMENT CONTENT (Contenido documental aislado como datos)  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4. Ingesta y Extracción Documental (`POST /api/v1/documents/extract`)
 
 Extrae el contenido textual y metadatos de documentos jurídicos y corporativos en memoria.
 
@@ -187,7 +254,7 @@ curl -X POST http://localhost:8000/api/v1/documents/extract \
 
 ---
 
-### 3. Endpoints de Diagnóstico
+### 5. Endpoints de Diagnóstico
 - **`GET /`**: Estado general del servicio activo.
 - **`GET /health`**: Healthcheck JSON (`{"status": "ok", "service": "hitchings-documentos"}`).
 - **`GET /docs`**: Documentación interactiva Swagger UI.

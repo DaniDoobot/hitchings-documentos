@@ -17,12 +17,14 @@ class Settings(BaseSettings):
     # Google Gemini Configuration
     GEMINI_API_KEY: str = ""
     GEMINI_TRANSCRIPTION_MODEL: str = "gemini-3.5-transcribe"
+    GEMINI_ANALYSIS_MODEL: str = "gemini-3.8-flash"
     GEMINI_TIMEOUT_SECONDS: int = 300
     GEMINI_MAX_RETRIES: int = 2
 
     # Processing Limits
     MAX_DOCUMENT_SIZE_MB: int = 25
     MAX_AUDIO_SIZE_MB: int = 200
+    MAX_TEXT_CHARACTERS: int = 5000000
 
     @property
     def max_document_size_bytes(self) -> int:
