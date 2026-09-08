@@ -161,10 +161,13 @@ curl -X POST "http://localhost:8000/api/v1/audio/transcribe?mode=verbatim&diariz
 
 #### Smoke Test de Verificación Real
 Para ejecutar una prueba manual real contra Gemini (cuando se disponga de `GEMINI_API_KEY`):
-```bash
-python scripts/smoke_test_gemini_audio.py
-```
-Este script genera un audio sintetizado en memoria, lo sube a Files API, invoca Interactions API, valida la respuesta y destruye de forma garantizada todos los recursos remotos y locales. No genera costes significativos ni forma parte de las suites automáticas.
+1. Graba un archivo de audio corto y claro (WAV o MP3) diciendo por ejemplo:
+   > *"Hola, esto es una prueba de transcripción del proyecto Hitchings."*
+2. Ejecuta el smoke test pasando la ruta del archivo:
+   ```bash
+   python scripts/smoke_test_gemini_audio.py --audio ruta/al/audio.wav
+   ```
+Este script carga el audio real con voz, lo valida, lo sube a la Files API de Gemini, invoca la Interactions API oficial, comprueba que se recibe una transcripción no vacía, realiza un matching tolerante de palabras clave (`prueba`, `transcripción`, `Hitchings`) y destruye de forma garantizada el recurso remoto en Gemini (`finally`). Los archivos de prueba (`smoke_audio.*`, `tmp/`, audios) están ignorados en `.gitignore` para no contaminar el repositorio.
 
 ---
 

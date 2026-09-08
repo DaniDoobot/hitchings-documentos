@@ -58,3 +58,14 @@ coverage.xml
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Temporary smoke test files & audios
+tmp/
+smoke_audio.*
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.ogg
+*.flac
+*.webm
