@@ -1,3 +1,4 @@
+from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_TRANSCRIPTION_MODEL: str = "gemini-3.5-transcribe"
     GEMINI_ANALYSIS_MODEL: str = "gemini-3.8-flash"
+    GEMINI_ANALYSIS_THINKING_LEVEL: Literal["low", "medium", "high"] = "medium"
     GEMINI_TIMEOUT_SECONDS: int = 300
     GEMINI_MAX_RETRIES: int = 2
 
@@ -25,6 +27,7 @@ class Settings(BaseSettings):
     MAX_DOCUMENT_SIZE_MB: int = 25
     MAX_AUDIO_SIZE_MB: int = 200
     MAX_TEXT_CHARACTERS: int = 5000000
+    MAX_ANALYSIS_INPUT_TOKENS: int = 900000
 
     @property
     def max_document_size_bytes(self) -> int:

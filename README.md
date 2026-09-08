@@ -16,25 +16,37 @@ hitchings-documentos/
 │   │   ├── routes.py
 │   │   └── v1/
 │   │       ├── __init__.py
+│   │       ├── analysis.py   # Endpoint de análisis documental con Gemini
 │   │       ├── audio.py      # Endpoint de transcripción de audio
-│   │       └── documents.py  # Endpoint de extracción de documentos
+│   │       ├── documents.py  # Endpoint de extracción de documentos
+│   │       ├── prompts.py    # Catálogo de prompts configurados
+│   │       └── text.py       # Preparación de texto pegado
 │   ├── core/         # Configuración central (Pydantic Settings) y logging
 │   │   ├── __init__.py
 │   │   ├── config.py
 │   │   └── logging.py
-│   ├── models/       # Modelos de dominio y persistencia
+│   ├── data/         # Almacenamiento versionado de configuración
+│   │   └── default_prompts.json
+│   ├── models/       # Modelos de dominio
 │   │   └── __init__.py
 │   ├── schemas/      # Esquemas de validación Pydantic
 │   │   ├── __init__.py
+│   │   ├── analysis.py   # Schemas para análisis y structured outputs
 │   │   ├── audio.py      # Schemas para transcripción y segmentos
 │   │   ├── documents.py  # Schemas para extracción documental
-│   │   └── health.py     # Schema para healthcheck
+│   │   ├── health.py     # Schema para healthcheck
+│   │   ├── prompts.py    # Schemas para catálogo y peticiones de análisis
+│   │   └── text.py       # Schemas para preparación de texto
 │   ├── services/     # Lógica de negocio y orquestación
 │   │   ├── __init__.py
-│   │   ├── audio_transcription.py # Orquestación de audio y ciclo Files API
-│   │   ├── document_extractor.py  # Orquestación de extracción documental
-│   │   ├── gemini_client.py       # Wrapper oficial SDK google-genai
-│   │   └── extractors/            # Extractores por formato
+│   │   ├── analysis_prompt_builder.py # Constructor desacoplado System/Input
+│   │   ├── analysis_service.py        # Orquestación de análisis y Gemini Interactions
+│   │   ├── audio_transcription.py     # Orquestación de audio y ciclo Files API
+│   │   ├── document_extractor.py      # Orquestación de extracción documental
+│   │   ├── gemini_client.py           # Wrapper oficial SDK google-genai
+│   │   ├── prompt_service.py          # Gestión y consulta del catálogo de prompts
+│   │   ├── text_service.py            # Validación y normalización de texto
+│   │   └── extractors/                # Extractores por formato
 │   │       ├── __init__.py
 │   │       ├── base.py
 │   │       ├── docx.py
@@ -45,12 +57,18 @@ hitchings-documentos/
 │   │   └── text.py   # Normalización conservadora y métricas
 │   ├── __init__.py
 │   └── main.py       # Entrada FastAPI, ciclo de vida y handlers de error
-├── tests/            # Tests automatizados (pytest)
+├── scripts/          # Scripts de validación y smoke tests manuales
+│   ├── smoke_test_gemini_analysis.py # Smoke test real de análisis documental
+│   └── smoke_test_gemini_audio.py    # Smoke test real de transcripción de audio
+├── tests/            # Tests automatizados (pytest, 100% mocks)
 │   ├── __init__.py
 │   ├── conftest.py
-│   ├── test_audio.py     # Tests de transcripción (mocks de Gemini)
+│   ├── test_analysis.py  # Tests de análisis y structured outputs (Gemini mockeado)
+│   ├── test_audio.py     # Tests de transcripción (Gemini mockeado)
 │   ├── test_documents.py # Tests de extracción documental
-│   └── test_health.py    # Tests de salud y root
+│   ├── test_health.py    # Tests de salud y root
+│   ├── test_prompts.py   # Tests del catálogo de prompts y esquemas
+│   └── test_text.py      # Tests de preparación de texto
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
@@ -93,12 +111,14 @@ Variables disponibles:
 | `LOG_LEVEL` | Nivel de logging (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
 | `GEMINI_API_KEY` | Clave de API de Google Gemini (Developer API Key, sin Vertex AI) | *(vacío)* |
 | `GEMINI_TRANSCRIPTION_MODEL` | Modelo de Gemini utilizado para la transcripción de audio | `gemini-3.5-transcribe` |
-| `GEMINI_ANALYSIS_MODEL` | Modelo de Gemini previsto para el análisis documental (Bloque 4B) | `gemini-3.8-flash` |
+| `GEMINI_ANALYSIS_MODEL` | Modelo de Gemini utilizado para el análisis documental | `gemini-3.8-flash` |
+| `GEMINI_ANALYSIS_THINKING_LEVEL` | Nivel de razonamiento del modelo de análisis (`low`, `medium`, `high`) | `medium` |
 | `GEMINI_TIMEOUT_SECONDS` | Tiempo límite en segundos para llamadas a Gemini | `300` |
 | `GEMINI_MAX_RETRIES` | Número de reintentos para fallos transitorios | `2` |
 | `MAX_DOCUMENT_SIZE_MB` | Límite técnico por archivo documental (HTTP 413 si se supera) | `25` |
 | `MAX_AUDIO_SIZE_MB` | Límite técnico por archivo de audio (HTTP 413 si se supera) | `200` |
 | `MAX_TEXT_CHARACTERS` | Límite técnico por texto pegado en caracteres (HTTP 413 si se supera) | `5000000` |
+| `MAX_ANALYSIS_INPUT_TOKENS` | Límite operativo de tokens de entrada para análisis individual (HTTP 413) | `900000` |
 
 > **Nota de seguridad:** Nunca subas el archivo `.env` con claves reales al control de versiones. Ya se encuentra excluido en `.gitignore`.
 
@@ -211,34 +231,91 @@ Permite al frontend consultar los prompts predefinidos y configuraciones de aná
   * `timeline`: Cronología estricta y ordenada de acontecimientos y fechas detectadas.
   * `custom-analysis`: Plantilla base flexible para análisis guiado por instrucciones personalizadas del usuario.
 
-#### Arquitectura Conceptual del Pipeline de Análisis (Hacia el Bloque 4B)
+---
+
+### 4. Análisis Documental con Gemini (`POST /api/v1/analysis`)
+
+Núcleo del procesamiento analítico de HITCHINGS. Permite someter cualquier contenido textual normalizado (procedente de extracción documental PDF/DOCX/TXT, transcripción de audio o texto pegado) a un examen riguroso mediante la API oficial **Google Gemini Interactions API**, aplicando el prompt seleccionado y sus parámetros de configuración.
+
+#### Pipeline Técnico de Ejecución
 ```text
-┌─────────────────┐
-│ 1. Documento    ├─┐
-├─────────────────┤ │   ┌──────────────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
-│ 2. Audio        ├─┼──>│ Contenido Textual    │ ──> │ Prompt Elegido       │ ──> │ Gemini Analysis      │ ──> Resultado
-├─────────────────┤ │   │ Normalizado          │     │ + Opciones de Salida │     │ (gemini-3.8-flash)   │
-│ 3. Texto Pegado ├─┘   └──────────────────────┘     └──────────────────────┘     └──────────────────────┘
-└─────────────────┘
+CONTENIDO NORMALIZADO
+       ↓
+VALIDACIONES PREVIAS (no vacío, límite caracteres, existencia y actividad del prompt)
+       ↓
+TOKEN PREFLIGHT (conteo oficial con count_tokens, rechazo HTTP 413 si > MAX_ANALYSIS_INPUT_TOKENS)
+       ↓
+PROMPT BUILDER DESACOPLADO (System Instruction inviolable vs. User Input estructurado)
+       ↓
+GEMINI INTERACTIONS API (gemini-3.8-flash, thinking_level, schema JSON)
+       ↓
+STRUCTURED OUTPUT (extracción y validación estricta con Pydantic)
+       ↓
+RESPUESTA API (título, contenido en Markdown, advertencias, métricas de tokens)
 ```
 
-#### Prevención de Prompt Injection Documental
-En el pipeline de análisis con LLM, el contenido textual del documento debe ser tratado estrictamente como **DATOS PUROS**, jamás como instrucciones del sistema:
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ SYSTEM INSTRUCTIONS (Rol del modelo, directrices inviolables)│
-├─────────────────────────────────────────────────────────────┤
-│ PROMPT TEMPLATE (Instrucciones estructuradas del análisis)  │
-├─────────────────────────────────────────────────────────────┤
-│ USER ANALYSIS INSTRUCTIONS (Instrucciones opcionales)        │
-├─────────────────────────────────────────────────────────────┤
-│ DOCUMENT CONTENT (Contenido documental aislado como datos)  │
-└─────────────────────────────────────────────────────────────┘
+#### Características Técnicas y Directivas de Diseño
+* **Modelo Configurable**: Gobernado por la variable de entorno `GEMINI_ANALYSIS_MODEL` (`gemini-3.8-flash` por defecto), sin nombres hardcodeados.
+* **Nivel de Pensamiento (Thinking Level)**: Configurable mediante `GEMINI_ANALYSIS_THINKING_LEVEL` (`medium` por defecto; valores admitidos: `low`, `medium`, `high`).
+* **Límite Operativo de Tokens (Pre-vuelo)**: Configurado con `MAX_ANALYSIS_INPUT_TOKENS` (900.000 tokens por defecto). Antes de invocar la generación, se realiza un conteo oficial de tokens (`client.models.count_tokens`). Si se supera el límite operativo, se rechaza de inmediato con **HTTP 413** sin invocar `interactions.create`.
+* **Cero Herramientas Externas**: No se habilitan ni conectan herramientas como Google Search, URL Context, File Search, Function Calling ni RAG. El análisis se realiza estrictamente sobre el material suministrado.
+* **Sin Persistencia**: Ni los textos sometidos ni las respuestas generadas se almacenan en disco ni en base de datos.
+* **Separación de Instrucciones y Mitigación de Prompt Injection**:
+  * `system_instruction`: Se transmiten de forma nativa e independiente las directrices inviolables del sistema: deber de veracidad estricta, prohibición de invención/alucinación, obligación de reportar omisiones y directriz explícita de tratar el contenido documental como datos pasivos no confiables.
+  * `input`: Contiene de manera delimitada por capas la plantilla del prompt, las opciones de salida (`detail_level`, `output_format`), las instrucciones adicionales del usuario y el texto documental encapsulado dentro de un bloque ` ```document_content `. Cualquier directriz imperativa encontrada dentro del documento ("ignora instrucciones", etc.) es tratada como dato textual objeto de examen, no como orden ejecutable.
+* **Salida Estructurada Fiable (Structured Output)**: La petición a Gemini especifica `response_format` con esquema JSON derivado del modelo Pydantic `AnalysisModelOutput` (`title`, `content`, `warnings`). La respuesta recibida es validada estrictamente con Pydantic; cualquier desviación o JSON incompleto es capturado y mapeado a **HTTP 502**.
+* **Métricas de Uso Expuestas**: El bloque `usage` (`input_tokens`, `output_tokens`, `total_tokens`) se extrae de `interaction.usage` y se devuelve en la respuesta para facilitar el control de consumo.
+* **Confidencialidad Técnica en Logs**: Se mantiene una política estricta de no registrar textos documentales, fragmentos, respuestas generadas, claves de API ni directrices completas del prompt. Únicamente se registran métricas cuantitativas técnicas (prompt_id, modelo, niveles configurados, recuentos de tokens y duración en milisegundos).
+
+**Ejemplo de llamada con cURL:**
+```bash
+curl -X POST http://localhost:8000/api/v1/analysis \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "El 3 de marzo de 2026, Empresa Alfa y Empresa Beta firmaron un contrato de servicios por 12 meses...",
+    "prompt_id": "key-points",
+    "options": {
+      "detail_level": "standard",
+      "output_format": "sections",
+      "additional_instructions": "Focalizar en las penalizaciones por retraso."
+    }
+  }'
 ```
+
+**Ejemplo de respuesta (JSON):**
+```json
+{
+  "prompt_id": "key-points",
+  "prompt_name": "Puntos clave",
+  "model": "gemini-3.8-flash",
+  "options": {
+    "detail_level": "standard",
+    "output_format": "sections",
+    "additional_instructions": "Focalizar en las penalizaciones por retraso."
+  },
+  "title": "Análisis de Puntos Clave: Contrato de Prestación de Servicios",
+  "content": "## 1. Elementos Esenciales\n- **Firma del acuerdo:** Celebración de contrato bilateral...\n\n## 2. Régimen Sancionador\n- Penalización económica de 500 euros...",
+  "warnings": [
+    "El documento no especifica el precio total ni las obligaciones económicas de Empresa Beta."
+  ],
+  "usage": {
+    "input_tokens": 807,
+    "output_tokens": 705,
+    "total_tokens": 1808
+  }
+}
+```
+
+#### Smoke Test de Verificación Real
+Para verificar de forma aislada y puntual la integración real con Gemini:
+```bash
+python scripts/smoke_test_gemini_analysis.py --prompt key-points
+```
+Realiza una única interacción real utilizando un texto sintético breve y no confidencial, validando autenticación, conteo previo de tokens, llamada a `interactions.create`, validación del esquema Pydantic y reporte de uso.
 
 ---
 
-### 4. Ingesta y Extracción Documental (`POST /api/v1/documents/extract`)
+### 5. Ingesta y Extracción Documental (`POST /api/v1/documents/extract`)
 
 Extrae el contenido textual y metadatos de documentos jurídicos y corporativos en memoria.
 
@@ -254,7 +331,7 @@ curl -X POST http://localhost:8000/api/v1/documents/extract \
 
 ---
 
-### 5. Endpoints de Diagnóstico
+### 6. Endpoints de Diagnóstico
 - **`GET /`**: Estado general del servicio activo.
 - **`GET /health`**: Healthcheck JSON (`{"status": "ok", "service": "hitchings-documentos"}`).
 - **`GET /docs`**: Documentación interactiva Swagger UI.
