@@ -17,8 +17,10 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    expose:
+      - "8000"
     networks:
-      - hitchings-local-net
+      - hitchings-net
     environment:
       APP_ENV: production
       APP_HOST: "0.0.0.0"
@@ -57,7 +59,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     networks:
-      - hitchings-local-net
+      - hitchings-net
     depends_on:
       backend:
         condition: service_healthy
@@ -69,5 +71,5 @@ services:
       APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD:-test1234}
 
 networks:
-  hitchings-local-net:
+  hitchings-net:
     driver: bridge
