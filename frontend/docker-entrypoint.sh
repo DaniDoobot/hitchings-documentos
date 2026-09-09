@@ -26,6 +26,11 @@ printf '%s' "${APP_BASIC_AUTH_PASSWORD}" \
 echo "INFO: Basic Auth configurada correctamente."
 
 # ----------------------------------------------------------------
+# Validar configuración real de Nginx en runtime (con backend resoluble)
+# ----------------------------------------------------------------
+nginx -t
+
+# ----------------------------------------------------------------
 # Arrancar Nginx en primer plano
 # ----------------------------------------------------------------
 exec nginx -g 'daemon off;'
