@@ -6,13 +6,11 @@ export const Header: React.FC = () => {
     <header className="app-header">
       <div className="header-inner">
         <div className="header-branding">
-          <div className="brand-icon">
-            <img
-              src="/favicon.png"
-              alt="Hitchings y Gonzalez Documentos"
-              style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover' }}
-            />
-          </div>
+          <img
+            src="/favicon.png"
+            alt="Hitchings y Gonzalez Documentos"
+            className="brand-logo"
+          />
           <div>
             <h1 className="brand-title">HITCHINGS Y GONZALEZ DOCUMENTOS</h1>
             <p className="brand-subtitle">
