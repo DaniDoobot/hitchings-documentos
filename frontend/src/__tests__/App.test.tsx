@@ -50,7 +50,7 @@ describe('HITCHINGS Documentos - Frontend Base (Bloque 6A)', () => {
   it('1. Renderiza el encabezado principal con la identidad corporativa de HITCHINGS', async () => {
     await renderAppReady();
 
-    expect(screen.getByText(/HITCHINGS DOCUMENTOS/i)).toBeInTheDocument();
+    expect(screen.getByText(/HITCHINGS Y GONZALEZ DOCUMENTOS/i)).toBeInTheDocument();
     expect(
       screen.getByText(/Procesamiento, Transcripción y Análisis Documental/i)
     ).toBeInTheDocument();

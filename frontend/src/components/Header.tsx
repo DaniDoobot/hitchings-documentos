@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 export const Header: React.FC = () => {
   return (
@@ -7,10 +7,14 @@ export const Header: React.FC = () => {
       <div className="header-inner">
         <div className="header-branding">
           <div className="brand-icon">
-            <FileText size={22} color="#93c5fd" />
+            <img
+              src="/favicon.png"
+              alt="Hitchings y Gonzalez Documentos"
+              style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover' }}
+            />
           </div>
           <div>
-            <h1 className="brand-title">HITCHINGS DOCUMENTOS</h1>
+            <h1 className="brand-title">HITCHINGS Y GONZALEZ DOCUMENTOS</h1>
             <p className="brand-subtitle">
               Procesamiento, Transcripción y Análisis Documental
             </p>
