@@ -1,0 +1,77 @@
+# =============================================================
+# HITCHINGS Documentos — docker-compose PRODUCCIÓN
+# =============================================================
+# Uso:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Variables requeridas en el entorno del host (o via --env-file):
+#   Ver .env.production.example
+# =============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # Backend — FastAPI (solo red interna, NO publicado al host)
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - hitchings-net
+    environment:
+      APP_ENV: production
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_TRANSCRIPTION_MODEL: ${GEMINI_TRANSCRIPTION_MODEL:-gemini-3.5-transcribe}
+      GEMINI_ANALYSIS_MODEL: ${GEMINI_ANALYSIS_MODEL:-gemini-3.8-flash}
+      GEMINI_ANALYSIS_THINKING_LEVEL: ${GEMINI_ANALYSIS_THINKING_LEVEL:-medium}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-300}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      MAX_DOCUMENT_SIZE_MB: ${MAX_DOCUMENT_SIZE_MB:-25}
+      MAX_AUDIO_SIZE_MB: ${MAX_AUDIO_SIZE_MB:-200}
+      MAX_TEXT_CHARACTERS: ${MAX_TEXT_CHARACTERS:-5000000}
+      MAX_ANALYSIS_INPUT_TOKENS: ${MAX_ANALYSIS_INPUT_TOKENS:-900000}
+      MAX_EXPORT_CHARACTERS: ${MAX_EXPORT_CHARACTERS:-2000000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    healthcheck:
+      test: >
+        python -c "
+        import urllib.request, sys;
+        try:
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5);
+          sys.exit(0)
+        except Exception:
+          sys.exit(1)
+        "
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ----------------------------------------------------------
+  # Frontend — Nginx + React SPA
+  # Único servicio expuesto al exterior (vía Traefik en prod)
+  # ----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - hitchings-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER}
+      APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD}
+    # En producción Traefik/Dokploy gestiona el puerto externo.
+    # NO se publican puertos aquí; Dokploy los asigna via labels.
+
+networks:
+  hitchings-net:
+    driver: bridge

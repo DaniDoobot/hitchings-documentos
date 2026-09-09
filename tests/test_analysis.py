@@ -633,6 +633,7 @@ def test_smoke_scripts_do_not_expose_api_key_metadata():
     all_scripts = scripts_with_gemini + [
         repo_root / "scripts" / "verify_browser_export_filename.py",
         repo_root / "scripts" / "verify_e2e_workflow.py",
+        repo_root / "scripts" / "smoke_docker_local.py",
     ]
 
     for script_path in all_scripts:

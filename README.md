@@ -69,13 +69,20 @@ hitchings-documentos/
 │   │   ├── App.tsx       # Componente raíz y coordinación de estado
 │   │   ├── index.css     # Estilos sobrios corporativos nativos
 │   │   └── main.tsx      # Punto de entrada de React
+│   ├── .dockerignore
+│   ├── docker-entrypoint.sh # Entrypoint con generación runtime de .htpasswd
+│   ├── Dockerfile        # Multi-stage build (Node 24 + Nginx 1.27)
+│   ├── nginx.conf        # Configuración Nginx proxy reverso y cabeceras
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── vite.config.ts
 ├── scripts/          # Scripts de validación y smoke tests manuales
+│   ├── smoke_docker_local.py         # Smoke test automatizado para Docker local
 │   ├── smoke_test_gemini_analysis.py # Smoke test real de análisis documental
 │   ├── smoke_test_gemini_audio.py    # Smoke test real de transcripción de audio
 │   ├── verify_browser_e2e.py         # Test automatizado E2E real en navegador (Playwright)
+│   ├── verify_browser_export_filename.py # Validación de nombre real descargado
+│   ├── verify_e2e_workflow.py        # Verificación de flujos integrados backend
 │   └── verify_word_export.py         # Verificación programática de exportación Word
 ├── tests/            # Tests automatizados backend (pytest, 100% mocks)
 │   ├── __init__.py
@@ -90,8 +97,11 @@ hitchings-documentos/
 │   └── test_text.py      # Tests de preparación de texto
 ├── .dockerignore
 ├── .env.example
+├── .env.production.example  # Plantilla de variables para producción
 ├── .gitignore
-├── Dockerfile
+├── docker-compose.local.yml # Compose para smoke test local (127.0.0.1:8080)
+├── docker-compose.prod.yml  # Compose para Dokploy / Producción
+├── Dockerfile        # Dockerfile backend (Python 3.12, usuario no-root)
 ├── pytest.ini
 ├── requirements.txt
 └── README.md
@@ -622,19 +632,100 @@ Para verificar el flujo completo de forma local con el backend real y Gemini Dev
 
 ---
 
-## Ejecución con Docker (Dokploy)
+---
 
-1. **Construir la imagen**:
+## Despliegue en Producción y Arquitectura Docker
+
+### Arquitectura de Producción
+
+En entorno de producción (Dokploy / servidor final), el sistema se estructura en dos servicios coordinados mediante Docker Compose sobre una red interna aislada:
+
+```text
+Internet
+   ↓
+Dokploy / Traefik  (Terminación TLS, gestión de dominio)
+   ↓
+[ Servicio Frontend: Nginx 1.27 Alpine ] (:80)
+   ├── /healthz          → 200 "ok" (sin autenticación, monitoreo de Dokploy)
+   ├── /                 → React SPA compilado (Protegido con Basic Auth)
+   └── /api/*            → Proxy reverso hacia backend (Protegido con Basic Auth)
+                                 ↓
+         [ Servicio Backend: FastAPI / Python 3.12 ] (:8000)
+         (Red interna Docker `hitchings-net` — Puerto 8000 NO expuesto al host)
+```
+
+### Principios de Hardening y Seguridad
+
+* **Único punto de entrada público**: El contenedor backend FastAPI no publica el puerto 8000 al host en producción. Solo es accesible internamente desde la red Docker compartida con Nginx.
+* **Mismo origen (Same-Origin)**: El frontend se compila con `VITE_API_BASE_URL=""`, de modo que todas las llamadas a `/api/...` se dirigen al mismo origen. Nginx realiza el proxy transparente hacia el backend.
+* **Protección temporal de acceso (Basic Auth)**:
+  * Protege tanto la interfaz React (`/`) como la API (`/api/*`).
+  * El endpoint de liveness `/healthz` queda explícitamente exento de autenticación para permitir healthchecks de Dokploy/orquestadores.
+  * Las credenciales se inyectan en tiempo de ejecución mediante las variables de entorno `APP_BASIC_AUTH_USER` y `APP_BASIC_AUTH_PASSWORD`.
+  * El archivo `.htpasswd` se genera dinámicamente en el arranque del contenedor mediante `htpasswd` leyendo la contraseña por `stdin` (sin exponerla en línea de comandos ni en logs).
+  * **Fallo seguro (Fail-Safe)**: Si alguna de las dos variables de credenciales no está configurada, el contenedor frontend finaliza con código de error y no inicia el servidor web.
+  * *Nota: Esta protección es temporal para pilotaje/entrega y no sustituye a un sistema de autenticación multiusuario futuro.*
+* **Soporte de audio de gran tamaño y análisis largo**:
+  * `client_max_body_size 210m` en Nginx para admitir archivos de audio de hasta 200 MB.
+  * `proxy_request_buffering off` en Nginx para evitar retención innecesaria en memoria antes de transferir al backend.
+  * Timeouts de `proxy_read_timeout 360s` y `proxy_send_timeout 360s` (alineados con el límite de `GEMINI_TIMEOUT_SECONDS=300`).
+* **Cabeceras de seguridad**: Nginx emite en todas las respuestas:
+  * `X-Content-Type-Options: nosniff`
+  * `X-Frame-Options: DENY`
+  * `Referrer-Policy: strict-origin-when-cross-origin`
+  * `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+  * `Content-Security-Policy: default-src 'self' ...`
+* **Healthchecks Docker nativos**: El servicio backend incluye un healthcheck nativo con Python stdlib (`urllib.request`) sobre `http://127.0.0.1:8000/health` sin dependencias externas (curl/wget).
+* **Ausencia de persistencia innecesaria**: El sistema no requiere ni incluye bases de datos relacionales (PostgreSQL), colas/cachés externas (Redis) ni volúmenes persistentes. Toda la memoria se gestiona en el ciclo de vida de la petición.
+
+### Variables de Entorno en Producción
+
+Consultar la plantilla completa en [.env.production.example](.env.production.example):
+
+| Variable | Requerida | Descripción |
+| :--- | :---: | :--- |
+| `APP_ENV` | Sí | Fijar a `production` |
+| `GEMINI_API_KEY` | Sí | API Key oficial de Google Gemini (Developer API) |
+| `GEMINI_TRANSCRIPTION_MODEL` | No | Por defecto `gemini-3.5-transcribe` |
+| `GEMINI_ANALYSIS_MODEL` | No | Por defecto `gemini-3.8-flash` |
+| `GEMINI_TIMEOUT_SECONDS` | No | Por defecto `300` |
+| `APP_BASIC_AUTH_USER` | Sí | Usuario para la barrera temporal de acceso |
+| `APP_BASIC_AUTH_PASSWORD` | Sí | Contraseña para la barrera temporal de acceso |
+
+### Validación Local con Docker (Smoke Test)
+
+Para validar localmente el empaquetado y la configuración de proxy/seguridad antes de desplegar en Dokploy:
+
+1. **Levantar los servicios locales** (el frontend se publica únicamente en `127.0.0.1:8080`):
    ```bash
-   docker build -t hitchings-documentos .
+   docker compose -f docker-compose.local.yml up -d --build
    ```
 
-2. **Ejecutar el contenedor**:
+2. **Ejecutar la suite de smoke test automatizada**:
    ```bash
-   docker run -d -p 8000:8000 --env-file .env --name hitchings-documentos-svc hitchings-documentos
+   python scripts/smoke_docker_local.py
    ```
 
-3. **Verificar estado**:
+   El script valida programáticamente:
+   * `GET /` sin autenticación devuelve **HTTP 401 Unauthorized**.
+   * `GET /healthz` sin autenticación devuelve **HTTP 200 OK**.
+   * `GET /` con Basic Auth devuelve **HTTP 200 OK** y el HTML del SPA.
+   * `GET /ruta-inexistente` con Basic Auth devuelve **HTTP 200 OK** (SPA fallback).
+   * `GET /api/v1/prompts` a través del proxy Nginx devuelve **HTTP 200** y catálogo JSON.
+   * `POST /api/v1/text/prepare` a través del proxy devuelve **HTTP 200**.
+   * El puerto 8000 del backend no es accesible directamente desde el host.
+   * Presencia de cabeceras de seguridad (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`).
+   * Ausencia de referencias a `localhost:8000` o secretos en el bundle estático.
+
+3. **Detener los servicios locales**:
    ```bash
-   curl http://localhost:8000/health
+   docker compose -f docker-compose.local.yml down
    ```
+
+### Despliegue en Dokploy
+
+Para el despliegue productivo final:
+1. Configurar en Dokploy la aplicación utilizando el archivo compose `docker-compose.prod.yml`.
+2. Asignar las variables de entorno documentadas en `.env.production.example`.
+3. Dokploy/Traefik enrutará el tráfico HTTPS del dominio directamente al servicio `frontend` (puerto 80).
+

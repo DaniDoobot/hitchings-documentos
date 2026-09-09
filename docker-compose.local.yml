@@ -1,0 +1,73 @@
+# =============================================================
+# HITCHINGS Documentos — docker-compose LOCAL (smoke test)
+# =============================================================
+# Uso:
+#   docker compose -f docker-compose.local.yml up -d --build
+#   python scripts/smoke_docker_local.py
+#   docker compose -f docker-compose.local.yml down
+#
+# Expone el frontend SOLO en 127.0.0.1:8080 (no public).
+# El backend NO se expone al host (igual que en producción).
+# =============================================================
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - hitchings-local-net
+    environment:
+      APP_ENV: production
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: INFO
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-dummy-key-for-smoke-test}
+      GEMINI_TRANSCRIPTION_MODEL: gemini-3.5-transcribe
+      GEMINI_ANALYSIS_MODEL: gemini-3.8-flash
+      GEMINI_ANALYSIS_THINKING_LEVEL: medium
+      GEMINI_TIMEOUT_SECONDS: "300"
+      GEMINI_MAX_RETRIES: "2"
+      MAX_DOCUMENT_SIZE_MB: "25"
+      MAX_AUDIO_SIZE_MB: "200"
+      MAX_TEXT_CHARACTERS: "5000000"
+      MAX_ANALYSIS_INPUT_TOKENS: "900000"
+      MAX_EXPORT_CHARACTERS: "2000000"
+      CORS_ALLOWED_ORIGINS: ""
+    healthcheck:
+      test: >
+        python -c "
+        import urllib.request, sys;
+        try:
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5);
+          sys.exit(0)
+        except Exception:
+          sys.exit(1)
+        "
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - hitchings-local-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # Solo localhost — nunca exponer en 0.0.0.0 en local
+      - "127.0.0.1:8080:80"
+    environment:
+      APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER:-hitchings}
+      APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD:-test1234}
+
+networks:
+  hitchings-local-net:
+    driver: bridge

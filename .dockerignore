@@ -3,6 +3,7 @@
 .dockerignore
 .venv
 venv
+venv312
 __pycache__
 *.pyc
 *.pyo
@@ -10,6 +11,16 @@ __pycache__
 .pytest_cache
 .coverage
 tests
+scripts
+frontend
 .env
 .env.*
+.env.production.example
 README.md
+*.md
+screenshots
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
