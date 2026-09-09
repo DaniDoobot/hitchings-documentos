@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     MAX_ANALYSIS_INPUT_TOKENS: int = 900000
     MAX_EXPORT_CHARACTERS: int = 2000000
 
+    # CORS Configuration
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:5173"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
     @property
     def max_document_size_bytes(self) -> int:
         return self.MAX_DOCUMENT_SIZE_MB * 1024 * 1024

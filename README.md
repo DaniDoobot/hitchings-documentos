@@ -60,15 +60,28 @@ hitchings-documentos/
 │   │   └── text.py   # Normalización conservadora y métricas
 │   ├── __init__.py
 │   └── main.py       # Entrada FastAPI, ciclo de vida y handlers de error
+├── frontend/         # Interfaz Web (React + TypeScript + Vite)
+│   ├── src/
+│   │   ├── __tests__/    # Tests frontend (Vitest + RTL)
+│   │   ├── api/          # Cliente API tipado y servicios
+│   │   ├── components/   # Componentes modulares de interfaz
+│   │   ├── types/        # Modelos y contratos TypeScript
+│   │   ├── App.tsx       # Componente raíz y coordinación de estado
+│   │   ├── index.css     # Estilos sobrios corporativos nativos
+│   │   └── main.tsx      # Punto de entrada de React
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
 ├── scripts/          # Scripts de validación y smoke tests manuales
 │   ├── smoke_test_gemini_analysis.py # Smoke test real de análisis documental
 │   ├── smoke_test_gemini_audio.py    # Smoke test real de transcripción de audio
 │   └── verify_word_export.py         # Verificación programática de exportación Word
-├── tests/            # Tests automatizados (pytest, 100% mocks)
+├── tests/            # Tests automatizados backend (pytest, 100% mocks)
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_analysis.py  # Tests de análisis y structured outputs (Gemini mockeado)
 │   ├── test_audio.py     # Tests de transcripción (Gemini mockeado)
+│   ├── test_cors.py      # Tests de cabeceras CORS
 │   ├── test_documents.py # Tests de extracción documental
 │   ├── test_export.py    # Tests de exportación a Word (.docx)
 │   ├── test_health.py    # Tests de salud y root
@@ -88,6 +101,7 @@ hitchings-documentos/
 ## Requisitos Previos
 
 - Python 3.12 (versión de referencia oficial)
+- Node.js >= 18 y npm (para el frontend web)
 - Git
 - Docker (para despliegue en contenedor / Dokploy)
 
@@ -125,6 +139,7 @@ Variables disponibles:
 | `MAX_TEXT_CHARACTERS` | Límite técnico por texto pegado en caracteres (HTTP 413 si se supera) | `5000000` |
 | `MAX_ANALYSIS_INPUT_TOKENS` | Límite operativo de tokens de entrada para análisis individual (HTTP 413) | `900000` |
 | `MAX_EXPORT_CHARACTERS` | Límite técnico para exportación de documentos a Word en caracteres (HTTP 413) | `2000000` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos separados por comas para peticiones CORS del frontend | `http://localhost:5173` |
 
 > **Nota de seguridad:** Nunca subas el archivo `.env` con claves reales al control de versiones. Ya se encuentra excluido en `.gitignore`.
 
@@ -432,12 +447,60 @@ curl -X POST http://localhost:8000/api/v1/documents/extract \
 
 ---
 
-## Ejecución de Tests
+## Ejecución de Tests Backend
 
 Con el entorno virtual activado:
 
 ```bash
 pytest -v
+```
+
+---
+
+## Frontend Web (React + TypeScript + Vite)
+
+La aplicación cuenta con una interfaz web sobria y profesional ubicada en `frontend/`.
+
+### 1. Variables de Entorno del Frontend
+
+Crea el archivo `frontend/.env` copiando la plantilla:
+
+```bash
+cd frontend
+cp .env.example .env
+```
+
+| Variable | Descripción | Valor por defecto |
+|---|---|---|
+| `VITE_API_BASE_URL` | URL base del backend FastAPI de HITCHINGS | `http://localhost:8000` |
+
+### 2. Instalación y Ejecución en Desarrollo
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+La aplicación estará disponible por defecto en:
+`http://localhost:5173`
+
+### 3. Ejecución de Tests del Frontend
+
+La suite de pruebas automatizadas utiliza Vitest y React Testing Library:
+
+```bash
+cd frontend
+npm test
+```
+
+### 4. Compilación para Producción
+
+Genera los archivos estáticos optimizados en `frontend/dist`:
+
+```bash
+cd frontend
+npm run build
 ```
 
 ---
