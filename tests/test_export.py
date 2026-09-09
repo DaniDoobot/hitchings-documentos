@@ -200,6 +200,29 @@ def test_export_word_metadata_rendered(client: TestClient):
     assert "gemini-3.8-flash" not in all_text
 
 
+def test_export_word_renders_prompt_name_but_never_model(client: TestClient):
+    payload = {
+        "title": "Dictamen de Prueba",
+        "content": "Contenido del dictamen legal.",
+        "warnings": [],
+        "metadata": {
+            "prompt_name": "Puntos clave",
+            "model": "gemini-3.8-flash",
+        },
+    }
+    response = client.post("/api/v1/export/word", json=payload)
+    assert response.status_code == 200
+    doc = docx.Document(io.BytesIO(response.content))
+    all_text = " ".join(p.text for p in doc.paragraphs)
+
+    # El nombre de la plantilla sí debe aparecer visiblemente
+    assert "Tipo de análisis: Puntos clave" in all_text
+    # El modelo interno bajo ningún concepto debe aparecer en el Word
+    assert "gemini-3.8-flash" not in all_text
+    assert "gemini" not in all_text.lower()
+
+
+
 # 15. Sanitización de nombre de archivo seguro
 def test_export_word_filename_sanitization():
     # Títulos con acentos, caracteres extraños y espacios

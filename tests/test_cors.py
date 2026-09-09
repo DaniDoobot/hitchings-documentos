@@ -33,3 +33,21 @@ def test_cors_disallowed_origin(client):
     response = client.get("/api/v1/prompts", headers=headers)
     assert response.status_code == 200
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_expose_headers_content_disposition(client):
+    headers = {"Origin": "http://localhost:5173"}
+    response = client.post(
+        "/api/v1/export/word",
+        headers=headers,
+        json={
+            "title": "Documento Test",
+            "content": "Contenido test",
+            "warnings": [],
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    exposed = response.headers.get("access-control-expose-headers", "")
+    assert "Content-Disposition" in exposed
+

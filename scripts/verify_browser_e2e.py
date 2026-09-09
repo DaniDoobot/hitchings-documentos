@@ -68,6 +68,13 @@ def run_e2e_browser_test():
     print("=== HITCHINGS DOCUMENTOS - TEST E2E NAVEGADOR REAL (BLOQUE 6C) ===")
     print("=" * 70)
 
+    # 0. Verificación limpia de GEMINI_API_KEY
+    from app.core.config import settings
+    if not settings.GEMINI_API_KEY:
+        print("[ERROR] GEMINI_API_KEY no está configurada en .env ni en variables de entorno.")
+        sys.exit(1)
+    print("[OK] GEMINI_API_KEY configurada: sí")
+
     # 1. Verificar o iniciar Backend y Frontend
     backend_proc = None
     frontend_proc = None
@@ -235,6 +242,8 @@ def run_e2e_browser_test():
             download = download_info.value
             suggested_filename = download.suggested_filename
             print(f"      Descarga interceptada con nombre: '{suggested_filename}'")
+            assert suggested_filename != "hitchings-analisis.docx", "El navegador continuó usando el fallback genérico"
+            assert suggested_filename.endswith(".docx"), "El archivo descargado no tiene extensión .docx"
             download.save_as(str(downloaded_docx_path))
 
             # Comprobar mensaje de exito en la UI

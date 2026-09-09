@@ -625,17 +625,26 @@ def test_smoke_scripts_do_not_expose_api_key_metadata():
     import pathlib
 
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    scripts_to_check = [
+    scripts_with_gemini = [
         repo_root / "scripts" / "smoke_test_gemini_analysis.py",
         repo_root / "scripts" / "smoke_test_gemini_audio.py",
+        repo_root / "scripts" / "verify_browser_e2e.py",
+    ]
+    all_scripts = scripts_with_gemini + [
+        repo_root / "scripts" / "verify_browser_export_filename.py",
+        repo_root / "scripts" / "verify_e2e_workflow.py",
     ]
 
-    for script_path in scripts_to_check:
+    for script_path in all_scripts:
         content = script_path.read_text(encoding="utf-8")
         # No debe haber referencias a longitud de api_key, prefijos, sufijos o máscaras parciales
         assert "len(api_key)" not in content, f"len(api_key) encontrado en {script_path.name}"
+        assert "len(settings.GEMINI_API_KEY)" not in content, f"len(settings.GEMINI_API_KEY) encontrado en {script_path.name}"
         assert "masked_key" not in content, f"masked_key encontrado en {script_path.name}"
         assert "api_key[:" not in content, f"api_key slice/prefijo encontrado en {script_path.name}"
         assert "api_key[-" not in content, f"api_key slice/sufijo encontrado en {script_path.name}"
+
+    for script_path in scripts_with_gemini:
+        content = script_path.read_text(encoding="utf-8")
         assert "GEMINI_API_KEY configurada: sí" in content, f"Indicación limpia no encontrada en {script_path.name}"
 

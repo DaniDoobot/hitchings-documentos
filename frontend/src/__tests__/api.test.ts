@@ -238,6 +238,22 @@ describe('API Client y Servicios', () => {
     expect(result.filename).toBe('documento_legal.docx');
   });
 
+  it('apiFetchBlob devuelve filename undefined cuando no existe cabecera Content-Disposition', async () => {
+    const fakeBlob = new Blob(['binary data'], { type: 'application/docx' });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      blob: async () => fakeBlob,
+    } as unknown as Response);
+
+    const { apiFetchBlob } = await import('../api/client');
+    const result = await apiFetchBlob('/api/v1/export/word');
+
+    expect(result.blob).toBe(fakeBlob);
+    expect(result.filename).toBeUndefined();
+  });
+
   it('exportAnalysisToWord envía POST a /api/v1/export/word con payload JSON', async () => {
     const fakeBlob = new Blob(['fake docx']);
     globalThis.fetch = vi.fn().mockResolvedValue({

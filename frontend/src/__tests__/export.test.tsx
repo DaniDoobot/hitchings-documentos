@@ -132,13 +132,61 @@ describe('HITCHINGS Documentos - Exportación Word y UX (Bloque 6C)', () => {
     window.URL.createObjectURL = createObjectURLMock;
     window.URL.revokeObjectURL = revokeObjectURLMock;
 
+    let capturedDownload: string | null = null;
+    const origCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const el = origCreateElement(tagName);
+      if (tagName.toLowerCase() === 'a') {
+        const origClick = el.click.bind(el);
+        el.click = () => {
+          capturedDownload = el.getAttribute('download') || (el as HTMLAnchorElement).download;
+          origClick();
+        };
+      }
+      return el;
+    });
+
     render(<AnalysisResult analysis={mockAnalysis} />);
     fireEvent.click(screen.getByRole('button', { name: /exportar a word/i }));
 
     await waitFor(() => {
       expect(createObjectURLMock).toHaveBeenCalledWith(mockBlob);
       expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:http://localhost:5173/mock-uuid');
+      expect(capturedDownload).toBe('contrato_final_2026.docx');
     });
+
+    createElementSpy.mockRestore();
+  });
+
+  it('usa fallback hitchings-analisis.docx si exportAnalysisToWord devuelve filename vacío', async () => {
+    const mockBlob = new Blob(['docx content'], { type: 'application/docx' });
+    vi.spyOn(exportApi, 'exportAnalysisToWord').mockResolvedValue({
+      blob: mockBlob,
+      filename: '',
+    });
+
+    let capturedDownload: string | null = null;
+    const origCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const el = origCreateElement(tagName);
+      if (tagName.toLowerCase() === 'a') {
+        const origClick = el.click.bind(el);
+        el.click = () => {
+          capturedDownload = el.getAttribute('download') || (el as HTMLAnchorElement).download;
+          origClick();
+        };
+      }
+      return el;
+    });
+
+    render(<AnalysisResult analysis={mockAnalysis} />);
+    fireEvent.click(screen.getByRole('button', { name: /exportar a word/i }));
+
+    await waitFor(() => {
+      expect(capturedDownload).toBe('hitchings-analisis.docx');
+    });
+
+    createElementSpy.mockRestore();
   });
 
   it('11 y 12. Mientras exporta, el botón muestra "Generando Word…" y previene doble click', async () => {
