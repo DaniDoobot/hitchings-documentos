@@ -43,6 +43,12 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# Validar sintaxis de Nginx durante el build para evitar restart loops en runtime
+RUN touch /etc/nginx/.htpasswd \
+    && (echo "127.0.0.1 backend" >> /etc/hosts 2>/dev/null || true) \
+    && nginx -t \
+    && rm -f /etc/nginx/.htpasswd
+
 # El puerto 80 queda documentado; el expose real lo gestiona Compose/Traefik
 EXPOSE 80
 

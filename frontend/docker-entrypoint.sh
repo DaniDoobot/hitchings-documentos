@@ -23,7 +23,7 @@ fi
 printf '%s' "${APP_BASIC_AUTH_PASSWORD}" \
     | htpasswd -ci /etc/nginx/.htpasswd "${APP_BASIC_AUTH_USER}"
 
-echo "INFO: Basic Auth configurada para el usuario '${APP_BASIC_AUTH_USER}'."
+echo "INFO: Basic Auth configurada correctamente."
 
 # ----------------------------------------------------------------
 # Arrancar Nginx en primer plano
