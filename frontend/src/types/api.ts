@@ -100,3 +100,21 @@ export interface TextPrepareResponse {
   word_count: number;
   character_count: number;
 }
+
+export interface WordExportMetadata {
+  prompt_name?: string | null;
+  model?: string | null;
+}
+
+export interface WordExportRequest {
+  title: string;
+  content: string;
+  warnings: string[];
+  metadata?: WordExportMetadata | null;
+}
+
+export interface WordExportResult {
+  blob: Blob;
+  filename: string;
+}
+

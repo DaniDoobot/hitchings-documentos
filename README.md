@@ -75,6 +75,7 @@ hitchings-documentos/
 ├── scripts/          # Scripts de validación y smoke tests manuales
 │   ├── smoke_test_gemini_analysis.py # Smoke test real de análisis documental
 │   ├── smoke_test_gemini_audio.py    # Smoke test real de transcripción de audio
+│   ├── verify_browser_e2e.py         # Test automatizado E2E real en navegador (Playwright)
 │   └── verify_word_export.py         # Verificación programática de exportación Word
 ├── tests/            # Tests automatizados backend (pytest, 100% mocks)
 │   ├── __init__.py
@@ -540,6 +541,62 @@ El frontend orquesta los tres flujos documentales completos conectando directame
   * Sección diferenciada para advertencias de procesamiento (extracción/audio) y advertencias de análisis documental emitidas por Gemini.
   * Pie de página técnico discreto con métricas de tokens (entrada, salida y total) cuando están disponibles.
   * Botón para copiar el resultado al portapapeles en formato Markdown limpio.
+
+---
+
+## Exportación a Word desde Frontend y Validación en Navegador (Bloque 6C)
+
+El Bloque 6C completa el MVP visible al usuario integrando la exportación a Word directamente desde la interfaz web:
+
+```text
+RESULTADO DE ANÁLISIS EN PANTALLA
+               ↓
+     [ Exportar a Word ]
+               ↓
+    POST /api/v1/export/word
+ (WordExportRequest con metadatos y warnings)
+               ↓
+       Respuesta Blob binaria
+(Content-Disposition: attachment; filename="...")
+               ↓
+  Descarga en memoria en navegador
+ (URL.createObjectURL -> <a> -> click -> revokeObjectURL)
+               ↓
+  Archivo .docx en equipo local
+```
+
+### Funcionalidades y Experiencia de Usuario (UX)
+
+* **Descarga Limpia en Memoria (Blob API)**:
+  * La respuesta binaria del endpoint `POST /api/v1/export/word` es tratada como `Blob` en memoria.
+  * Se extrae el nombre sugerido del encabezado HTTP `Content-Disposition` (`filename*` o `filename`), con saneamiento defensivo contra rutas relativas y fallback a `hitchings-analisis.docx`.
+  * No se almacena el binario en almacenamiento local ni persistente.
+* **Feedback Visual y Prevención de Concurrencia**:
+  * Durante la generación del `.docx`, el botón muestra el estado `Generando Word…` con spinner animado y se deshabilita temporalmente para evitar peticiones duplicadas.
+  * Al completarse la descarga, se muestra un banner de confirmación: `✓ Word generado correctamente` (auto-dismiss en 3 segundos).
+  * En caso de exceder el límite permitido, se informa adecuadamente: `El resultado es demasiado extenso para exportarlo a Word` (HTTP 413).
+* **Regla de Limpieza de Contenido Documental**:
+  * Si el usuario modifica el archivo documental (PDF/DOCX/TXT), el audio o el texto ingresado, el resultado previo de análisis y los errores se limpian automáticamente de pantalla.
+  * Si el usuario únicamente modifica el prompt, el nivel de detalle o el formato de salida, el resultado previo se mantiene visible hasta que decida lanzar un nuevo análisis.
+* **Scroll Automático al Resultado**:
+  * Al finalizar con éxito un análisis, la interfaz desplaza suavemente la vista hacia la tarjeta del resultado, respetando la preferencia del sistema `prefers-reduced-motion`.
+
+### Validación Automatizada E2E en Navegador Real (Playwright)
+
+El script `scripts/verify_browser_e2e.py` automatiza la verificación completa extremo a extremo en un navegador Chrome real:
+1. Inicia o verifica la disponibilidad de FastAPI en `http://localhost:8000` y Vite en `http://localhost:5173`.
+2. Lanza Chromium en modo headless y monitorea consola y red (0 errores, 0 secretos expuestos).
+3. Introduce el texto contractual de prueba en la pestaña *Pegar texto*.
+4. Selecciona la plantilla de análisis *Puntos clave* y ejecuta **una única llamada real a Gemini 3.8 Flash**.
+5. Verifica el renderizado de la tarjeta de resultados (título, secciones, métricas de tokens y advertencias).
+6. En la misma sesión de navegador, pulsa *Exportar a Word* (reutilizando el resultado, sin llamadas adicionales a Gemini).
+7. Captura el archivo descargado e inspecciona con `python-docx` sus encabezados, párrafos y estructura.
+8. Genera capturas de pantalla de ambas fases (`scripts/e2e_browser_analysis.png` y `scripts/e2e_browser_word_export.png`).
+
+Para ejecutar la verificación E2E del navegador:
+```bash
+python -u scripts/verify_browser_e2e.py
+```
 
 ---
 

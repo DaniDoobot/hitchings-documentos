@@ -219,4 +219,54 @@ describe('API Client y Servicios', () => {
       })
     );
   });
+
+  it('apiFetchBlob procesa respuesta binaria y extrae filename de Content-Disposition', async () => {
+    const fakeBlob = new Blob(['binary data'], { type: 'application/docx' });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'Content-Disposition': 'attachment; filename="documento_legal.docx"',
+      }),
+      blob: async () => fakeBlob,
+    } as unknown as Response);
+
+    const { apiFetchBlob } = await import('../api/client');
+    const result = await apiFetchBlob('/api/v1/export/word');
+
+    expect(result.blob).toBe(fakeBlob);
+    expect(result.filename).toBe('documento_legal.docx');
+  });
+
+  it('exportAnalysisToWord envía POST a /api/v1/export/word con payload JSON', async () => {
+    const fakeBlob = new Blob(['fake docx']);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'Content-Disposition': 'attachment; filename*=UTF-8\'\'analisis_2026.docx',
+      }),
+      blob: async () => fakeBlob,
+    } as unknown as Response);
+
+    const { exportAnalysisToWord } = await import('../api/export');
+    const req = {
+      title: 'Título de Prueba',
+      content: 'Contenido',
+      warnings: ['Advertencia 1'],
+      metadata: { prompt_name: 'Prompt Test', model: 'gemini-3.8-flash' },
+    };
+    const result = await exportAnalysisToWord(req);
+
+    expect(result.filename).toBe('analisis_2026.docx');
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/export/word'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(req),
+      })
+    );
+  });
 });
+

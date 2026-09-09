@@ -78,6 +78,7 @@ export function App() {
 
   // Ref to track current processing stage synchronously for error handling
   const currentStageRef = useRef<ProcessingStage>('idle');
+  const resultRef = useRef<HTMLDivElement>(null);
   const updateStage = (stage: ProcessingStage) => {
     currentStageRef.current = stage;
     setProcessingStage(stage);
@@ -89,16 +90,35 @@ export function App() {
     processingStage === 'transcribing' ||
     processingStage === 'analyzing';
 
-  // Invalidation of Document Cache when file changes
+  // Smooth scroll to result upon successful analysis
+  useEffect(() => {
+    if (processingStage === 'completed' && analysisResult && resultRef.current) {
+      if (typeof resultRef.current.scrollIntoView === 'function') {
+        const prefersReducedMotion =
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        resultRef.current.scrollIntoView({
+          behavior: prefersReducedMotion ? 'auto' : 'smooth',
+          block: 'start',
+        });
+      }
+    }
+  }, [processingStage, analysisResult]);
+
+  // Invalidation of Document Cache and clearing analysis result when file changes
   const handleDocumentChange = (file: File | null) => {
     setDocumentFile(file);
     setCachedDoc(null);
+    setAnalysisResult(null);
+    setGeneralError(null);
   };
 
-  // Invalidation of Audio Cache when audio parameters change
+  // Invalidation of Audio Cache and clearing analysis result when audio file changes
   const handleAudioFileChange = (file: File | null) => {
     setAudioFile(file);
     setCachedAudio(null);
+    setAnalysisResult(null);
+    setGeneralError(null);
   };
 
   const handleAudioModeChange = (mode: TranscriptionMode) => {
@@ -109,6 +129,14 @@ export function App() {
   const handleAudioDiarizationChange = (diarization: boolean) => {
     setAudioDiarization(diarization);
     setCachedAudio(null);
+  };
+
+  const handleTextChange = (text: string) => {
+    setTextContent(text);
+    if (analysisResult) {
+      setAnalysisResult(null);
+      setGeneralError(null);
+    }
   };
 
   const loadPromptsCatalog = useCallback(async () => {
@@ -327,7 +355,7 @@ export function App() {
               {activeTab === 'text' && (
                 <TextArea
                   text={textContent}
-                  onTextChange={setTextContent}
+                  onTextChange={handleTextChange}
                 />
               )}
             </div>
@@ -378,7 +406,11 @@ export function App() {
 
         {/* Render Result when available */}
         {analysisResult && (
-          <section className="analysis-result-section" aria-label="Resultado del análisis">
+          <section
+            ref={resultRef}
+            className="analysis-result-section"
+            aria-label="Resultado del análisis"
+          >
             <AnalysisResult
               analysis={analysisResult}
               processingWarnings={processingWarnings}
