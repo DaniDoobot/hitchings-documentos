@@ -487,7 +487,7 @@ La aplicación estará disponible por defecto en:
 
 ### 3. Ejecución de Tests del Frontend
 
-La suite de pruebas automatizadas utiliza Vitest y React Testing Library:
+La suite de pruebas automatizadas utiliza Vitest y React Testing Library (57 tests pasando):
 
 ```bash
 cd frontend
@@ -502,6 +502,66 @@ Genera los archivos estáticos optimizados en `frontend/dist`:
 cd frontend
 npm run build
 ```
+
+---
+
+## Flujos Extremo a Extremo Conectados (Bloque 6B)
+
+El frontend orquesta los tres flujos documentales completos conectando directamente con los endpoints del backend FastAPI:
+
+```text
+1. VÍA DOCUMENTO (PDF / DOCX / TXT):
+   Archivo local -> POST /api/v1/documents/extract -> Texto extraído -> POST /api/v1/analysis -> Resultado visible
+
+2. VÍA AUDIO (MP3 / WAV / M4A / AAC / OGG / WEBM):
+   Grabación -> POST /api/v1/audio/transcribe -> Texto transcrito -> POST /api/v1/analysis -> Resultado visible
+
+3. VÍA TEXTO PEGADO:
+   Texto libre -> POST /api/v1/text/prepare -> Texto normalizado -> POST /api/v1/analysis -> Resultado visible
+```
+
+### Características Clave de la Integración E2E
+
+* **Caché en Memoria (React)**:
+  * El texto extraído de documentos se almacena en memoria vinculado al archivo.
+  * La transcripción de audio se almacena en memoria vinculada a la tupla `(archivo, modo, diarización)`.
+  * Si el usuario cambia únicamente de prompt o de parámetros de análisis, se reutiliza el texto en memoria sin volver a llamar a los endpoints de extracción o transcripción.
+  * Si el usuario cambia el archivo, el modo o la diarización, la caché se invalida inmediatamente.
+  * **Seguridad y Privacidad**: Ningún texto documental ni transcripción se almacena en `localStorage`, `sessionStorage` ni `IndexedDB`.
+* **Protección contra Doble Submit y Concurrencia**:
+  * Durante el procesamiento, el botón principal queda deshabilitado y muestra un indicador de carga animado con el estado contextual de la etapa (`Leyendo documento…`, `Transcribiendo grabación…`, `Preparando texto…`, `Analizando contenido…`).
+  * Los clics concurrentes son ignorados defensivamente.
+* **Manejo Contextual de Errores por Etapas**:
+  * Errores diferenciados según la etapa activa: extracción documental, transcripción de audio o análisis con Gemini.
+  * Mensajes claros para códigos HTTP estándar (400, 413, 415, 500, 502, 503, 504).
+  * Si el análisis falla tras una extracción o transcripción exitosa, el texto extraído se mantiene en memoria permitiendo reintentar el análisis sin recargar el archivo.
+* **Visualización de Resultados**:
+  * Renderizado estructurado y seguro de Markdown mediante `react-markdown` y `remark-gfm` (sin `dangerouslySetInnerHTML`).
+  * Sección diferenciada para advertencias de procesamiento (extracción/audio) y advertencias de análisis documental emitidas por Gemini.
+  * Pie de página técnico discreto con métricas de tokens (entrada, salida y total) cuando están disponibles.
+  * Botón para copiar el resultado al portapapeles en formato Markdown limpio.
+
+---
+
+## Verificación Local E2E con Servidor Real
+
+Para verificar el flujo completo de forma local con el backend real y Gemini Developer API:
+
+1. **Iniciar el backend**:
+   ```bash
+   uvicorn app.main:app --host 127.0.0.1 --port 8000
+   ```
+
+2. **Ejecutar el script de verificación**:
+   ```bash
+   python scripts/verify_e2e_workflow.py
+   ```
+
+3. **Iniciar el frontend en desarrollo**:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
 
 ---
 

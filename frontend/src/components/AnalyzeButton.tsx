@@ -6,6 +6,8 @@ interface AnalyzeButtonProps {
   tab: InputTab;
   hasContent: boolean;
   hasPrompt: boolean;
+  isProcessing: boolean;
+  processingMessage?: string | null;
   onClick: () => void;
 }
 
@@ -13,6 +15,8 @@ export const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({
   tab,
   hasContent,
   hasPrompt,
+  isProcessing,
+  processingMessage,
   onClick,
 }) => {
   const getButtonLabel = (): string => {
@@ -28,9 +32,12 @@ export const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({
     }
   };
 
-  const isEnabled = hasContent && hasPrompt;
+  const isEnabled = hasContent && hasPrompt && !isProcessing;
 
   const getStatusText = (): string => {
+    if (isProcessing) {
+      return 'Procesamiento en curso...';
+    }
     if (!hasContent && !hasPrompt) {
       return 'Selecciona un contenido y un tipo de análisis para comenzar';
     }
@@ -55,9 +62,16 @@ export const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({
         aria-label={getButtonLabel()}
       >
         <Play size={18} fill={isEnabled ? '#ffffff' : '#94a3b8'} />
-        <span>{getButtonLabel()}</span>
+        <span>{isProcessing ? 'Procesando...' : getButtonLabel()}</span>
       </button>
       <p className="cta-status-help">{getStatusText()}</p>
+
+      {isProcessing && processingMessage && (
+        <div className="processing-indicator" role="status" aria-live="polite">
+          <div className="spinner" aria-hidden="true" />
+          <span>{processingMessage}</span>
+        </div>
+      )}
     </div>
   );
 };
