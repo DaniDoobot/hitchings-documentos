@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.schemas.prompts import Prompt, PromptListResponse
 from app.services.prompt_service import PromptNotFoundError, prompt_service
 
@@ -27,8 +29,9 @@ async def list_prompts(
         False,
         description="Si es True, incluye en el listado prompts inactivos.",
     ),
+    db: Session = Depends(get_db),
 ) -> PromptListResponse:
-    prompts = prompt_service.get_all(include_inactive=include_inactive)
+    prompts = prompt_service.get_all(include_inactive=include_inactive, db=db)
     return PromptListResponse(prompts=prompts, total=len(prompts))
 
 
@@ -39,11 +42,15 @@ async def list_prompts(
     summary="Obtener detalle de un prompt específico",
     description="Retorna la configuración completa de un prompt según su identificador único (ej. 'legal-analysis').",
 )
-async def get_prompt(prompt_id: str) -> Prompt:
+async def get_prompt(
+    prompt_id: str,
+    db: Session = Depends(get_db),
+) -> Prompt:
     try:
-        return prompt_service.get_by_id(prompt_id)
+        return prompt_service.get_by_id(prompt_id, db=db)
     except PromptNotFoundError as err:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(err),
         ) from err
+

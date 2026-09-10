@@ -12,7 +12,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSection,
 }) => {
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === 'admin';
+
 
   return (
     <header className="app-header">
@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {isAdmin && onSelectSection && (
+        {user && onSelectSection && (
           <nav className="header-nav" aria-label="Navegación principal">
             <button
               type="button"

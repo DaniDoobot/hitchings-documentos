@@ -39,8 +39,12 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 def setup_test_database():
     """Crea todas las tablas antes de cada test y las elimina al finalizar para aislamiento absoluto."""
     Base.metadata.create_all(bind=test_engine)
+    with TestingSessionLocal() as init_session:
+        from app.services.analysis_type_service import analysis_type_service
+        analysis_type_service.seed_default_types(init_session)
     yield
     Base.metadata.drop_all(bind=test_engine)
+
 
 
 @pytest.fixture

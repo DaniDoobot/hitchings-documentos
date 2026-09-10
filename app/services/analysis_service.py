@@ -1,9 +1,10 @@
 import json
 import time
-from typing import Any
+from typing import Any, Optional
 
 from google.genai.errors import APIError
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -56,7 +57,7 @@ class DocumentAnalysisService:
     def client(self) -> GeminiClient:
         return self._client if self._client is not None else gemini_client
 
-    def validate_request(self, request: AnalysisRequest) -> Prompt:
+    def validate_request(self, request: AnalysisRequest, db: Optional[Session] = None) -> Prompt:
         """
         Valida que el texto no esté vacío ni exceda el límite de caracteres,
         y que el prompt exista y esté activo.
@@ -69,11 +70,12 @@ class DocumentAnalysisService:
         if char_len > settings.MAX_TEXT_CHARACTERS:
             raise TextSizeExceededError(char_len, settings.MAX_TEXT_CHARACTERS)
 
-        prompt = prompt_service.get_by_id(request.prompt_id)
+        prompt = prompt_service.get_by_id(request.prompt_id, db=db)
         if not prompt.is_active:
             raise InactivePromptError(request.prompt_id)
 
         return prompt
+
 
     def count_input_tokens(self, system_instruction: str, user_input: str) -> int:
         """
@@ -103,7 +105,7 @@ class DocumentAnalysisService:
                 "No se pudo verificar el número de tokens con el proveedor de IA."
             ) from exc
 
-    def analyze_document(self, request: AnalysisRequest) -> AnalysisResponse:
+    def analyze_document(self, request: AnalysisRequest, db: Optional[Session] = None) -> AnalysisResponse:
         """
         Ejecuta el pipeline de análisis documental:
         1. Validaciones previas
@@ -116,7 +118,8 @@ class DocumentAnalysisService:
         start_time = time.perf_counter()
 
         # 1. Validaciones
-        prompt = self.validate_request(request)
+        prompt = self.validate_request(request, db=db)
+
 
         # 2. Construcción desacoplada de System Instruction e Input
         system_instruction = analysis_prompt_builder.get_system_instruction()

@@ -8,8 +8,9 @@ import { PromptSelector } from './components/PromptSelector';
 import { AnalysisOptionsControl } from './components/AnalysisOptionsControl';
 import { AnalyzeButton } from './components/AnalyzeButton';
 import { AnalysisResult } from './components/AnalysisResult';
-import { UsersManagement } from './components/UsersManagement';
+import { SettingsView } from './components/SettingsView';
 import { fetchPrompts } from './api/prompts';
+
 import { extractDocument } from './api/documents';
 import { transcribeAudio } from './api/audio';
 import { prepareText } from './api/text';
@@ -47,17 +48,12 @@ interface CachedAudio {
 }
 
 function AuthenticatedApp() {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [activeSection, setActiveSection] = useState<'analysis' | 'settings'>('analysis');
 
-  // Si el usuario deja de tener rol de administrador, regresar inmediatamente a la vista de análisis
-  useEffect(() => {
-    if (user?.role !== 'admin' && activeSection === 'settings') {
-      setActiveSection('analysis');
-    }
-  }, [user?.role, activeSection]);
 
   // Navigation tab
+
   const [activeTab, setActiveTab] = useState<InputTab>('document');
 
   // Input states (persisted in React memory across tab changes)
@@ -340,9 +336,10 @@ function AuthenticatedApp() {
       <Header activeSection={activeSection} onSelectSection={setActiveSection} />
 
       <main className="app-main">
-        {activeSection === 'settings' && user?.role === 'admin' ? (
-          <UsersManagement />
+        {activeSection === 'settings' ? (
+          <SettingsView onTypesUpdated={loadPromptsCatalog} />
         ) : (
+
           <>
             {generalError && (
               <div className="banner banner-danger" role="alert">

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_current_user, require_admin, verify_csrf
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.analysis import router as analysis_router
+from app.api.v1.analysis_types import router as analysis_types_router
 from app.api.v1.audio import router as audio_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.documents import router as documents_router
@@ -22,8 +23,10 @@ router.include_router(documents_router, prefix="/api/v1", dependencies=auth_depe
 router.include_router(audio_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(text_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(prompts_router, prefix="/api/v1", dependencies=auth_dependencies)
+router.include_router(analysis_types_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(analysis_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(export_router, prefix="/api/v1", dependencies=auth_dependencies)
+
 
 # Rutas administrativas protegidas (requieren rol admin y CSRF en mutaciones)
 admin_dependencies = [Depends(require_admin), Depends(verify_csrf)]

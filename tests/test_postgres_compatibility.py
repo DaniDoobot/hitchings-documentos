@@ -2,6 +2,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 from app.models.user import User
 from app.models.session import Session
+from app.models.analysis_type import AnalysisType
 from app.db.base import Base
 
 
@@ -46,8 +47,38 @@ def test_postgresql_ddl_sessions_compilation():
     assert "PRIMARY KEY (id)" in ddl
 
 
+def test_postgresql_ddl_analysis_types_compilation():
+    """
+    Verifica que el modelo AnalysisType genera DDL 100% válido y compatible con PostgreSQL 16:
+    - UUID nativo para id, created_by_user_id y updated_by_user_id
+    - VARCHAR(64) único para code
+    - VARCHAR(150) para name
+    - TEXT para description e instructions
+    - BOOLEAN para is_active
+    - TIMESTAMP WITH TIME ZONE para created_at y updated_at
+    - Claves foráneas con ON DELETE SET NULL hacia users.id
+    """
+    ddl = str(CreateTable(AnalysisType.__table__).compile(dialect=postgresql.dialect()))
+    assert "CREATE TABLE analysis_types" in ddl
+    assert "id UUID NOT NULL" in ddl
+    assert "code VARCHAR(64) NOT NULL" in ddl
+    assert "name VARCHAR(150) NOT NULL" in ddl
+    assert "description TEXT NOT NULL" in ddl
+    assert "instructions TEXT NOT NULL" in ddl
+    assert "is_active BOOLEAN NOT NULL" in ddl
+    assert "created_by_user_id UUID" in ddl
+    assert "updated_by_user_id UUID" in ddl
+    assert "created_at TIMESTAMP WITH TIME ZONE NOT NULL" in ddl
+    assert "updated_at TIMESTAMP WITH TIME ZONE NOT NULL" in ddl
+    assert "FOREIGN KEY(created_by_user_id) REFERENCES users (id) ON DELETE SET NULL" in ddl
+    assert "FOREIGN KEY(updated_by_user_id) REFERENCES users (id) ON DELETE SET NULL" in ddl
+    assert "PRIMARY KEY (id)" in ddl
+
+
 def test_metadata_tables_coverage():
     """Verifica que todos los modelos del sistema están registrados en Base.metadata."""
     table_names = set(Base.metadata.tables.keys())
     assert "users" in table_names
     assert "sessions" in table_names
+    assert "analysis_types" in table_names
+

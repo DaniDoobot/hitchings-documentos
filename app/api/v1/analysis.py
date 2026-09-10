@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.schemas.analysis import AnalysisResponse
 from app.schemas.prompts import AnalysisRequest
 from app.services.analysis_service import (
@@ -29,9 +31,13 @@ router = APIRouter(prefix="/analysis", tags=["Analysis"])
         "e invoca la Gemini Interactions API con Structured Output y separación robusta de instrucciones."
     ),
 )
-async def analyze_document(request: AnalysisRequest) -> AnalysisResponse:
+async def analyze_document(
+    request: AnalysisRequest,
+    db: Session = Depends(get_db),
+) -> AnalysisResponse:
     try:
-        return analysis_service.analyze_document(request)
+        return analysis_service.analyze_document(request, db=db)
+
     except PromptNotFoundError as err:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

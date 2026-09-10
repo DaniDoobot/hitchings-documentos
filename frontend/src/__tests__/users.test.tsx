@@ -49,19 +49,24 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     });
   });
 
-  it('2. Usuario con role=user NO ve el acceso a Configuración en la cabecera', async () => {
+  it('2. Usuario con role=user ve Configuración pero NO la pestaña de Usuarios', async () => {
     vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
 
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('abogado@hitchings-gonzalez.com')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /configuración/i })).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole('button', { name: /configuración/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /configuración/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /tipos de análisis/i })).toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: /usuarios/i })).not.toBeInTheDocument();
+    });
   });
 
-  it('3. Navegación a Configuración carga y muestra la tabla de usuarios', async () => {
+  it('3. Administrador en Configuración accede a la pestaña Usuarios y ve la tabla', async () => {
     vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockAdminUser, csrf_token: 'valid-csrf' });
     vi.spyOn(usersApi, 'listUsers').mockResolvedValue({
       users: [mockAdminUser, mockRegularUser],
@@ -77,6 +82,12 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     fireEvent.click(screen.getByRole('button', { name: /configuración/i }));
 
     await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /usuarios/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: /usuarios/i }));
+
+    await waitFor(() => {
       expect(screen.getByRole('heading', { name: /gestión de cuentas y accesos/i })).toBeInTheDocument();
       expect(screen.getAllByText('admin@hitchings-gonzalez.com').length).toBeGreaterThanOrEqual(2);
       expect(screen.getByText('abogado@hitchings-gonzalez.com')).toBeInTheDocument();
@@ -85,6 +96,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
       expect(screen.getAllByText('Activo').length).toBeGreaterThanOrEqual(2);
     });
   });
+
 
   it('4. Abre modal y crea un nuevo usuario exitosamente', async () => {
     vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockAdminUser, csrf_token: 'valid-csrf' });
@@ -110,6 +122,11 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
       expect(screen.getByRole('button', { name: /configuración/i })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /configuración/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /usuarios/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /usuarios/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /nuevo usuario/i })).toBeInTheDocument();
@@ -148,6 +165,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     render(<App />);
 
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => fireEvent.click(screen.getByRole('tab', { name: /usuarios/i })));
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /nuevo usuario/i })));
 
     await userEvent.type(screen.getByLabelText(/correo electrónico/i), 'valida@hitchings.es');
@@ -171,6 +189,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     render(<App />);
 
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => fireEvent.click(screen.getByRole('tab', { name: /usuarios/i })));
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /nuevo usuario/i })));
 
     await userEvent.type(screen.getByLabelText(/correo electrónico/i), 'admin@hitchings-gonzalez.com');
@@ -197,6 +216,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     render(<App />);
 
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => fireEvent.click(screen.getByRole('tab', { name: /usuarios/i })));
     await waitFor(() => {
       expect(screen.getByLabelText(`Editar a ${mockRegularUser.email}`)).toBeInTheDocument();
     });
@@ -228,6 +248,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     render(<App />);
 
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => fireEvent.click(screen.getByRole('tab', { name: /usuarios/i })));
     await waitFor(() => {
       expect(screen.getByLabelText(`Cambiar contraseña de ${mockRegularUser.email}`)).toBeInTheDocument();
     });
@@ -259,6 +280,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     render(<App />);
 
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => fireEvent.click(screen.getByRole('tab', { name: /usuarios/i })));
     await waitFor(() => {
       expect(screen.getByLabelText(`Cambiar contraseña de ${mockAdminUser.email}`)).toBeInTheDocument();
     });
@@ -284,6 +306,7 @@ describe('Gestión de Usuarios Frontend (Bloque 7B)', () => {
     render(<App />);
 
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => fireEvent.click(screen.getByRole('tab', { name: /usuarios/i })));
     await waitFor(() => {
       expect(screen.getByLabelText(`Desactivar a ${mockRegularUser.email}`)).toBeInTheDocument();
     });
