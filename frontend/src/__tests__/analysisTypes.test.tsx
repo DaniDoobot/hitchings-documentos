@@ -243,4 +243,178 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
       expect(screen.getByText(/desactivado correctamente/i)).toBeInTheDocument();
     });
   });
+
+  // ─────────────────────────────────────────────
+  // Tests de ELIMINACIÓN FÍSICA (Bloque 7C.1)
+  // ─────────────────────────────────────────────
+
+  it('10. Botón Eliminar visible para admin', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockAdminUser, csrf_token: 'valid-csrf' });
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => {
+      expect(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`)).toBeInTheDocument();
+    });
+  });
+
+  it('11. Botón Eliminar visible también para user normal', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => {
+      expect(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`)).toBeInTheDocument();
+    });
+  });
+
+  it('12. Pulsar Eliminar NO borra inmediatamente — aparece modal de confirmación', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    const deleteSpy = vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockResolvedValue();
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /eliminar tipo de análisis/i })).toBeInTheDocument();
+    });
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('13. Cancelar en modal de confirmación NO llama DELETE', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    const deleteSpy = vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockResolvedValue();
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => screen.getByRole('heading', { name: /eliminar tipo de análisis/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /eliminar tipo de análisis/i })).not.toBeInTheDocument();
+    });
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('14. Confirmar eliminación llama DELETE y tipo desaparece del listado', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    const deleteSpy = vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockResolvedValue();
+    vi.spyOn(analysisTypesApi, 'listAnalysisTypes')
+      .mockResolvedValueOnce({ items: mockAnalysisTypes, total: 2 })
+      .mockResolvedValue({ items: [mockAnalysisTypes[1]], total: 1 });
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => screen.getByRole('heading', { name: /eliminar tipo de análisis/i }));
+    fireEvent.click(screen.getByRole('button', { name: /eliminar definitivamente/i }));
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith(mockAnalysisTypes[0].id);
+      expect(screen.getByText(/eliminado definitivamente/i)).toBeInTheDocument();
+    });
+  });
+
+  it('15. onTypesUpdated se llama tras eliminar exitosamente', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockResolvedValue();
+    vi.spyOn(analysisTypesApi, 'listAnalysisTypes')
+      .mockResolvedValueOnce({ items: mockAnalysisTypes, total: 2 })
+      .mockResolvedValue({ items: [mockAnalysisTypes[1]], total: 1 });
+    const onTypesUpdated = vi.fn();
+
+    const { AuthProvider } = await import('../context/AuthContext');
+    const { AnalysisTypesManagement } = await import('../components/AnalysisTypesManagement');
+
+    render(
+      <AuthProvider>
+        <AnalysisTypesManagement onTypesUpdated={onTypesUpdated} />
+      </AuthProvider>
+    );
+
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => screen.getByRole('heading', { name: /eliminar tipo de análisis/i }));
+    fireEvent.click(screen.getByRole('button', { name: /eliminar definitivamente/i }));
+
+    await waitFor(() => {
+      expect(onTypesUpdated).toHaveBeenCalled();
+    });
+  });
+
+  it('16. Fallo en DELETE mantiene el modal y muestra error — tipo permanece en listado', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockRejectedValue(new Error('Error de red al eliminar'));
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => screen.getByRole('heading', { name: /eliminar tipo de análisis/i }));
+    fireEvent.click(screen.getByRole('button', { name: /eliminar definitivamente/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/error de red al eliminar/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /eliminar tipo de análisis/i })).toBeInTheDocument();
+    });
+  });
+
+  it('17. Modal de eliminación muestra el nombre del tipo correctamente', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[1].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[1].name}`));
+    await waitFor(() => {
+      // El nombre aparece en el modal en un <strong> dentro del modal-body
+      expect(screen.getByText(/no podrá recuperarse automáticamente/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /eliminar tipo de análisis/i })).toBeInTheDocument();
+    });
+  });
+
+  it('18. Botón destructivo está diferenciado visualmente del botón Cancelar', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => {
+      const destructiveBtn = screen.getByRole('button', { name: /eliminar definitivamente/i });
+      const cancelBtn = screen.getByRole('button', { name: /^cancelar$/i });
+      expect(destructiveBtn).toHaveClass('btn-danger');
+      expect(cancelBtn).toHaveClass('btn-secondary');
+    });
+  });
+
+  it('19. Doble click en confirmar no envía dos peticiones DELETE', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
+    let resolveDelete!: () => void;
+    const deletePromise = new Promise<void>((res) => { resolveDelete = res; });
+    const deleteSpy = vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockReturnValue(deletePromise);
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => screen.getByRole('heading', { name: /eliminar tipo de análisis/i }));
+    const confirmBtn = screen.getByRole('button', { name: /eliminar definitivamente/i });
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn); // segundo click — debe ser ignorado
+    resolveDelete();
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('20. Tras eliminar, listado actualizado no muestra el tipo eliminado', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockAdminUser, csrf_token: 'valid-csrf' });
+    vi.spyOn(analysisTypesApi, 'deleteAnalysisType').mockResolvedValue();
+    vi.spyOn(analysisTypesApi, 'listAnalysisTypes')
+      .mockResolvedValueOnce({ items: mockAnalysisTypes, total: 2 })
+      .mockResolvedValue({ items: [mockAnalysisTypes[1]], total: 1 });
+    render(<App />);
+    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
+    await waitFor(() => screen.getByText(mockAnalysisTypes[0].name));
+    await waitFor(() => screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Eliminar ${mockAnalysisTypes[0].name}`));
+    await waitFor(() => screen.getByRole('heading', { name: /eliminar tipo de análisis/i }));
+    fireEvent.click(screen.getByRole('button', { name: /eliminar definitivamente/i }));
+    await waitFor(() => {
+      expect(screen.queryByText(mockAnalysisTypes[0].name)).not.toBeInTheDocument();
+    });
+  });
 });

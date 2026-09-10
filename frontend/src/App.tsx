@@ -163,7 +163,13 @@ function AuthenticatedApp() {
     try {
       const data = await fetchPrompts();
       setPrompts(data);
-      setSelectedPromptId((prev) => (prev ? prev : (data[0]?.id || '')));
+      setSelectedPromptId((prev) => {
+        // Si el tipo seleccionado ya no existe en el catálogo, limpiar selección
+        if (prev && !data.some((p) => p.id === prev)) {
+          return data[0]?.id || '';
+        }
+        return prev ? prev : (data[0]?.id || '');
+      });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         await logout();

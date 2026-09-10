@@ -1794,5 +1794,83 @@ body {
   opacity: 0.65;
 }
 
+/* ==========================================================================
+   Clases faltantes utilizadas por AnalysisTypesManagement (corrección 7C.1)
+   ========================================================================== */
 
+/* Input de texto — coherente con custom-select y custom-textarea */
+.custom-input {
+  width: 100%;
+  padding: 0.65rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: #ffffff;
+  font-size: 0.875rem;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
 
+.custom-input:focus {
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.custom-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Modal ancho para formularios extensos (≥600px) */
+.modal-lg {
+  max-width: 680px !important;
+}
+
+/* Asterisco de campo obligatorio */
+.required-star {
+  color: var(--danger);
+  margin-left: 0.15rem;
+}
+
+/* Botón icono compacto — base para acciones de tabla */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.btn-icon:hover {
+  background: var(--surface-hover);
+  color: var(--text-main);
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Variante peligrosa del btn-icon (eliminar) */
+.btn-icon-danger {
+  color: var(--danger);
+}
+
+.btn-icon-danger:hover {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Nota de ayuda debajo de inputs/textareas */
+.field-help-sm {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+  line-height: 1.4;
+}

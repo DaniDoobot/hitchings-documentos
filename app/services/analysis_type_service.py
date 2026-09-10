@@ -178,5 +178,10 @@ class AnalysisTypeService:
         db.refresh(analysis_type)
         return analysis_type
 
+    def delete(self, db: Session, analysis_type: AnalysisType) -> None:
+        """Elimina físicamente un tipo de análisis de la base de datos."""
+        db.delete(analysis_type)
+        db.commit()
+
 
 analysis_type_service = AnalysisTypeService()

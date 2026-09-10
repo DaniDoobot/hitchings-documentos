@@ -58,3 +58,13 @@ export async function updateAnalysisType(
     body: JSON.stringify(payload),
   });
 }
+
+/**
+ * Elimina físicamente un tipo de análisis.
+ * Accesible para cualquier usuario autenticado. Requiere CSRF.
+ */
+export async function deleteAnalysisType(typeId: string): Promise<void> {
+  await apiFetch<void>(`/api/v1/analysis-types/${typeId}`, {
+    method: 'DELETE',
+  });
+}

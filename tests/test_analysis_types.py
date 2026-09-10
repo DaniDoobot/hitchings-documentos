@@ -214,3 +214,186 @@ def test_base_estructural_juridica_content():
     assert "PROMPT INJECTION" in system_instruction
     assert "SEPARACIÓN EPISTÉMICA ESTRICTA" in system_instruction
     assert "SUBORDINACIÓN INVIOLABLE" in system_instruction
+
+
+# ============================================================
+# DELETE /api/v1/analysis-types/{id}
+# ============================================================
+
+def test_admin_can_delete_analysis_type(admin_client: TestClient, db: Session):
+    """Admin puede eliminar cualquier tipo de análisis — responde 204."""
+    # Crear un tipo nuevo para eliminar
+    payload = {
+        "name": "Tipo para Borrar Admin",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para el test de borrado admin.",
+        "is_active": True,
+    }
+    created = admin_client.post("/api/v1/analysis-types", json=payload).json()
+    type_id = created["id"]
+
+    resp = admin_client.delete(f"/api/v1/analysis-types/{type_id}")
+    assert resp.status_code == 204
+    assert resp.content == b""
+
+
+def test_regular_user_can_delete_analysis_type(client: TestClient):
+    """Usuario normal puede eliminar cualquier tipo — responde 204."""
+    payload = {
+        "name": "Tipo para Borrar Usuario",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para el test de borrado usuario.",
+        "is_active": True,
+    }
+    created = client.post("/api/v1/analysis-types", json=payload).json()
+    type_id = created["id"]
+
+    resp = client.delete(f"/api/v1/analysis-types/{type_id}")
+    assert resp.status_code == 204
+
+
+def test_anonymous_cannot_delete_analysis_type(unauthenticated_client: TestClient, client: TestClient):
+    """Anónimo recibe 401 al intentar eliminar."""
+    payload = {
+        "name": "Tipo para Borrar Anon",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para test anónimo.",
+        "is_active": True,
+    }
+    created = client.post("/api/v1/analysis-types", json=payload).json()
+    type_id = created["id"]
+
+    resp = unauthenticated_client.delete(f"/api/v1/analysis-types/{type_id}")
+    assert resp.status_code == 401
+
+
+def test_delete_without_csrf_returns_403(active_session_tokens):
+    """DELETE sin cabecera CSRF retorna 403."""
+    _, raw_session_token, _ = active_session_tokens
+
+    from app.core.config import settings
+    from app.main import app
+
+    with TestClient(app) as tc:
+        tc.cookies.set(settings.SESSION_COOKIE_NAME, raw_session_token)
+        # Primero crear un tipo con CSRF (usar el client fixture indirectamente)
+        # Para este test verificamos que sin CSRF el DELETE falla
+        random_uuid = str(uuid.uuid4())
+        resp = tc.delete(f"/api/v1/analysis-types/{random_uuid}")
+        assert resp.status_code == 403
+
+
+def test_delete_nonexistent_type_returns_404(client: TestClient):
+    """DELETE de un ID inexistente retorna 404."""
+    random_uuid = str(uuid.uuid4())
+    resp = client.delete(f"/api/v1/analysis-types/{random_uuid}")
+    assert resp.status_code == 404
+
+
+def test_deleted_type_not_in_analysis_types_list(client: TestClient):
+    """Tipo eliminado no aparece en GET /api/v1/analysis-types."""
+    payload = {
+        "name": "Tipo a Desaparecer del Listado",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para verificar desaparición del listado.",
+        "is_active": True,
+    }
+    created = client.post("/api/v1/analysis-types", json=payload).json()
+    type_id = created["id"]
+
+    # Verificar que aparece antes de borrar
+    list_before = client.get("/api/v1/analysis-types").json()
+    assert any(t["id"] == type_id for t in list_before["items"])
+
+    # Eliminar
+    del_resp = client.delete(f"/api/v1/analysis-types/{type_id}")
+    assert del_resp.status_code == 204
+
+    # Verificar que ya no aparece
+    list_after = client.get("/api/v1/analysis-types").json()
+    assert not any(t["id"] == type_id for t in list_after["items"])
+
+
+def test_deleted_type_not_in_prompts(client: TestClient):
+    """Tipo eliminado no aparece en GET /api/v1/prompts."""
+    payload = {
+        "name": "Tipo a Desaparecer de Prompts",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para verificar desaparición de prompts.",
+        "is_active": True,
+    }
+    created = client.post("/api/v1/analysis-types", json=payload).json()
+    type_id = created["id"]
+    code = created["code"]
+
+    # Verificar que aparece en /prompts
+    prompts_before = client.get("/api/v1/prompts").json()
+    assert any(p["id"] == code for p in prompts_before["prompts"])
+
+    # Eliminar
+    client.delete(f"/api/v1/analysis-types/{type_id}")
+
+    # Verificar que no aparece en /prompts
+    prompts_after = client.get("/api/v1/prompts").json()
+    assert not any(p["id"] == code for p in prompts_after["prompts"])
+
+
+def test_analysis_rejects_deleted_type(client: TestClient):
+    """Intentar analizar con un código eliminado retorna 404."""
+    payload = {
+        "name": "Tipo Eliminado Para Análisis",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para verificar rechazo post-borrado.",
+        "is_active": True,
+    }
+    created = client.post("/api/v1/analysis-types", json=payload).json()
+    type_id = created["id"]
+    code = created["code"]
+
+    # Eliminar
+    client.delete(f"/api/v1/analysis-types/{type_id}")
+
+    # Intentar análisis con el código eliminado
+    analysis_req = {
+        "text": "Contenido para prueba de análisis con tipo eliminado.",
+        "prompt_id": code,
+        "options": {"detail_level": "standard", "output_format": "sections"},
+    }
+    analysis_resp = client.post("/api/v1/analysis", json=analysis_req)
+    assert analysis_resp.status_code == 404
+
+
+def test_delete_does_not_affect_users(client: TestClient, admin_client: TestClient):
+    """Eliminar un tipo de análisis no afecta a los usuarios del sistema."""
+    # Verificar cantidad de usuarios antes
+    users_before = admin_client.get("/api/v1/admin/users").json()
+    user_count_before = len(users_before["users"])
+
+    # Crear y eliminar un tipo
+    payload = {
+        "name": "Tipo Inocuo Para Usuarios",
+        "description": "Descripción",
+        "instructions": "Instrucciones suficientes para verificar inocuidad sobre usuarios.",
+        "is_active": True,
+    }
+    created = client.post("/api/v1/analysis-types", json=payload).json()
+    client.delete(f"/api/v1/analysis-types/{created['id']}")
+
+    # Verificar que los usuarios siguen igual
+    users_after = admin_client.get("/api/v1/admin/users").json()
+    assert len(users_after["users"]) == user_count_before
+
+
+def test_seeded_type_can_be_deleted(client: TestClient):
+    """Los tipos históricos (seeded) también pueden eliminarse físicamente."""
+    # Obtener el primer tipo seeded
+    list_resp = client.get("/api/v1/analysis-types").json()
+    seeded = next(t for t in list_resp["items"] if t["code"] == "executive-summary")
+    seeded_id = seeded["id"]
+
+    resp = client.delete(f"/api/v1/analysis-types/{seeded_id}")
+    assert resp.status_code == 204
+
+    # Verificar que ya no existe
+    get_resp = client.get(f"/api/v1/analysis-types/{seeded_id}")
+    assert get_resp.status_code == 404

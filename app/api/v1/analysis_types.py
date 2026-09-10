@@ -106,3 +106,26 @@ async def update_analysis_type(
         )
     updated = analysis_type_service.update(db, item, data, user_id=current_user.id)
     return AnalysisTypeResponse.model_validate(updated)
+
+
+@router.delete(
+    "/{type_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar un tipo de análisis",
+    description=(
+        "Elimina físicamente un tipo de análisis de la base de datos. "
+        "La operación es irreversible. Accesible para cualquier usuario autenticado."
+    ),
+)
+async def delete_analysis_type(
+    type_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    item = analysis_type_service.get_by_id(db, type_id)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontró el tipo de análisis con ID '{type_id}'.",
+        )
+    analysis_type_service.delete(db, item)

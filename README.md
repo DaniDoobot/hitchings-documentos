@@ -775,10 +775,11 @@ Los tipos de análisis se persisten en la tabla `analysis_types` de PostgreSQL. 
 | `timeline` | Cronología |
 | `custom-analysis` | Análisis personalizado |
 
-### Modelo de Permisos para Tipos de Análisis
+### Modelo de Permisos y Gestión de Tipos de Análisis
 
-* **Cualquier usuario autenticado** (`admin` y `user`) puede listar, crear y editar tipos de análisis. El catálogo es compartido por todo el despacho.
-* Los tipos de análisis se desactivan en lugar de eliminarse físicamente (`is_active: false`). Los tipos inactivos son excluidos del selector de análisis y rechazados en análisis (HTTP 400).
+* **Cualquier usuario autenticado** (`admin` y `user`) puede listar, crear, editar, activar/desactivar y **eliminar definitivamente** tipos de análisis. El catálogo es compartido por todo el despacho.
+* **Eliminación Física Definitiva**: Cualquier tipo de análisis (incluidos los 5 tipos históricos) puede ser eliminado físicamente de la base de datos previa confirmación en modal destructivo. Si el tipo eliminado estaba seleccionado activamente, la interfaz limpia automáticamente la selección.
+* **Desactivación Temporal**: Los tipos también pueden desactivarse temporalmente (`is_active: false`) sin eliminarlos. Los tipos inactivos son excluidos del selector de análisis y rechazados al solicitar análisis (HTTP 400).
 * El **código identificador** (`code`) de cada tipo se genera automáticamente como slug a partir del nombre y es **inmutable** una vez creado, para preservar referencias de ejecución estables.
 * Los tipos de análisis predefinidos del sistema tienen `created_by_user_id = NULL`.
 
@@ -790,6 +791,7 @@ Los tipos de análisis se persisten en la tabla `analysis_types` de PostgreSQL. 
 | `GET` | `/api/v1/analysis-types/{id}` | Autenticado | Detalle de un tipo por UUID |
 | `POST` | `/api/v1/analysis-types` | Autenticado + CSRF | Crea un nuevo tipo (código generado automáticamente) |
 | `PATCH` | `/api/v1/analysis-types/{id}` | Autenticado + CSRF | Edita nombre, descripción, instrucciones o estado activo |
+| `DELETE` | `/api/v1/analysis-types/{id}` | Autenticado + CSRF | Elimina físicamente el tipo de análisis (204 No Content) |
 
 ### Migración de Base de Datos
 

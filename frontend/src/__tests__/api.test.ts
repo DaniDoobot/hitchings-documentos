@@ -28,6 +28,19 @@ describe('API Client y Servicios', () => {
     expect(result).toEqual({ status: 'ok' });
   });
 
+  it('apiFetch maneja respuestas 204 No Content sin error de JSON', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    } as Response);
+
+    const result = await apiFetch<void>('/endpoint', { method: 'DELETE' });
+    expect(result).toBeUndefined();
+  });
+
   it('apiFetch lanza ApiError con detalle ante errores HTTP', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
