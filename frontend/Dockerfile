@@ -41,7 +41,7 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 # Validar sintaxis de Nginx en build-time mediante copia temporal (sin depender de DNS en build)
-RUN sed 's|http://backend:8000|http://127.0.0.1:8000|g' /etc/nginx/nginx.conf > /tmp/nginx-test.conf \
+RUN sed 's|http://docs-backend:8000|http://127.0.0.1:8000|g' /etc/nginx/nginx.conf > /tmp/nginx-test.conf \
     && nginx -t -c /tmp/nginx-test.conf \
     && rm -f /tmp/nginx-test.conf
 

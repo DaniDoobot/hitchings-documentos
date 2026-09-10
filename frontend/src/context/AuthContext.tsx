@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { UserPublic, LoginCredentials } from '../types/auth';
 import * as authApi from '../api/auth';
 import { setCsrfToken } from '../api/client';
@@ -53,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const login = async (credentials: LoginCredentials) => {
+  const login = useCallback(async (credentials: LoginCredentials) => {
     const response = await authApi.login(credentials);
     setUser({
       id: response.id,
@@ -65,9 +65,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       last_login_at: response.last_login_at,
     });
     setCsrfToken(response.csrf_token);
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await authApi.logout();
     } catch {
@@ -76,7 +76,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setCsrfToken(null);
     }
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout }}>

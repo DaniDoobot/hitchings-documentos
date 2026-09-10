@@ -13,6 +13,7 @@ import { extractDocument } from './api/documents';
 import { transcribeAudio } from './api/audio';
 import { prepareText } from './api/text';
 import { analyzeContent } from './api/analysis';
+import { ApiError } from './api/client';
 import { getFriendlyErrorMessage } from './utils/errors';
 import type {
   InputTab,
@@ -45,6 +46,8 @@ interface CachedAudio {
 }
 
 function AuthenticatedApp() {
+  const { logout } = useAuth();
+
   // Navigation tab
   const [activeTab, setActiveTab] = useState<InputTab>('document');
 
@@ -157,6 +160,10 @@ function AuthenticatedApp() {
       setPrompts(data);
       setSelectedPromptId((prev) => (prev ? prev : (data[0]?.id || '')));
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        await logout();
+        return;
+      }
       setPromptsError(
         err instanceof Error
           ? err.message
@@ -165,7 +172,7 @@ function AuthenticatedApp() {
     } finally {
       setIsPromptsLoading(false);
     }
-  }, []);
+  }, [logout]);
 
   useEffect(() => {
     loadPromptsCatalog();

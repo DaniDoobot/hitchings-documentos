@@ -146,4 +146,55 @@ describe('Autenticación y Sesiones Frontend (Bloque 7A)', () => {
     expect(screen.queryByText('admin@hitchings-gonzalez.com')).not.toBeInTheDocument();
     expect(getCsrfToken()).toBeNull();
   });
+
+  it('7. Si la carga de prompts retorna 401 (sesión expirada), desloguea automáticamente y muestra login', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue(mockUser);
+    vi.spyOn(authApi, 'logout').mockResolvedValue({ message: 'Sesión cerrada.' });
+    vi.spyOn(promptsApi, 'fetchPrompts').mockRejectedValue(
+      new (await import('../api/client')).ApiError('No autenticado.', 401)
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Acceso a la plataforma/i)).toBeInTheDocument();
+    });
+
+    expect(authApi.logout).toHaveBeenCalled();
+  });
+
+  it('8. Si la carga de prompts falla por error de red/servidor (no 401), muestra error y botón Reintentar', async () => {
+    vi.spyOn(authApi, 'getMe').mockResolvedValue(mockUser);
+    const fetchPromptsSpy = vi.spyOn(promptsApi, 'fetchPrompts')
+      .mockRejectedValueOnce(new Error('Error al conectar con el servidor'))
+      .mockResolvedValueOnce([
+        {
+          id: 'legal-analysis',
+          name: 'Análisis Jurídico',
+          description: 'Descripción',
+          instructions: 'Instrucciones',
+          is_active: true,
+          is_system: true,
+          created_at: '2026-09-08T10:00:00Z',
+          updated_at: '2026-09-08T10:00:00Z',
+        },
+      ]);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Error al conectar con el servidor')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reintentar/i })).toBeInTheDocument();
+    });
+
+    // Clic en reintentar debe invocar nuevamente fetchPrompts y cargar el prompt
+    fireEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Error al conectar con el servidor')).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue('Análisis Jurídico')).toBeInTheDocument();
+    });
+
+    expect(fetchPromptsSpy).toHaveBeenCalledTimes(2);
+  });
 });

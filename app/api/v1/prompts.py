@@ -16,6 +16,12 @@ router = APIRouter(prefix="/prompts", tags=["Prompts"])
         "Permite el parámetro ?include_inactive=true para tareas administrativas o de auditoría."
     ),
 )
+@router.get(
+    "/",
+    response_model=PromptListResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 async def list_prompts(
     include_inactive: bool = Query(
         False,

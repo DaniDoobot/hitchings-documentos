@@ -17,7 +17,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     networks:
-      - hitchings-net
+      - hitchings-docs-net
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-hitchings_docs}
       POSTGRES_USER: ${POSTGRES_USER:-hitchings_app}
@@ -42,7 +42,10 @@ services:
     expose:
       - "8000"
     networks:
-      - hitchings-net
+      hitchings-docs-net:
+        aliases:
+          - docs-backend
+          - backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,7 +90,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     networks:
-      - hitchings-net
+      - hitchings-docs-net
     depends_on:
       backend:
         condition: service_healthy
@@ -95,9 +98,10 @@ services:
     # NO se publican puertos aquí; Dokploy los asigna via labels.
 
 networks:
-  hitchings-net:
+  hitchings-docs-net:
     driver: bridge
 
 volumes:
   postgres_data:
+
 

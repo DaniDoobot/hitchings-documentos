@@ -652,7 +652,7 @@ Dokploy / Traefik  (Terminación TLS, gestión de dominio)
    └── /api/*            → Proxy reverso hacia backend (Protegido con Basic Auth)
                                  ↓
          [ Servicio Backend: FastAPI / Python 3.12 ] (:8000)
-         (Red interna Docker `hitchings-net` — Puerto 8000 NO expuesto al host)
+         (Red interna Docker `hitchings-docs-net` — Puerto 8000 NO expuesto al host)
 ```
 
 ### Principios de Hardening y Seguridad

@@ -58,6 +58,25 @@ def test_list_prompts_include_inactive_flag(client: TestClient):
     assert response.json()["total"] >= 5
 
 
+def test_list_prompts_both_slash_variations_return_200(client: TestClient):
+    """Verifica que tanto /api/v1/prompts como /api/v1/prompts/ retornan 200 con el catálogo completo sin 307 ni 404."""
+    for path in ["/api/v1/prompts", "/api/v1/prompts/"]:
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 200, f"Fallo en {path}: {response.status_code}"
+        data = response.json()
+        assert "prompts" in data
+        assert len(data["prompts"]) == 5
+        assert data["total"] == 5
+
+
+def test_list_prompts_unauthenticated_returns_401_never_404(unauthenticated_client: TestClient):
+    """Verifica que peticiones no autenticadas a /prompts y /prompts/ retornan 401 y NUNCA 404."""
+    for path in ["/api/v1/prompts", "/api/v1/prompts/"]:
+        response = unauthenticated_client.get(path, follow_redirects=False)
+        assert response.status_code == 401, f"Fallo en {path}: esperó 401, obtuvo {response.status_code}"
+        assert response.status_code != 404
+
+
 def test_analysis_options_defaults():
     options = AnalysisOptions()
     assert options.detail_level == "standard"
