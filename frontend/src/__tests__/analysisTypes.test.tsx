@@ -146,10 +146,14 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
 
     render(<App />);
 
-    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
-    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /nuevo tipo/i })));
+    await waitFor(() => screen.getByRole('button', { name: /configuración/i }));
+    fireEvent.click(screen.getByRole('button', { name: /configuración/i }));
+    await waitFor(() => screen.getByRole('button', { name: /nuevo tipo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /nuevo tipo/i }));
 
-    expect(screen.getByRole('heading', { name: /nuevo tipo de análisis/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /nuevo tipo de análisis/i })).toBeInTheDocument();
+    });
 
     await userEvent.type(screen.getByLabelText(/nombre del tipo de análisis/i), 'Análisis de Cárteles');
     await userEvent.type(screen.getByLabelText(/descripción breve/i), 'Detección y examen de indicios de colusión.');
@@ -176,8 +180,14 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
 
     render(<App />);
 
-    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
-    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /nuevo tipo/i })));
+    await waitFor(() => screen.getByRole('button', { name: /configuración/i }));
+    fireEvent.click(screen.getByRole('button', { name: /configuración/i }));
+    await waitFor(() => screen.getByRole('button', { name: /nuevo tipo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /nuevo tipo/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /nuevo tipo de análisis/i })).toBeInTheDocument();
+    });
 
     await userEvent.type(screen.getByLabelText(/nombre del tipo de análisis/i), 'A');
     await userEvent.type(screen.getByLabelText(/instrucciones especializadas del modelo/i), 'Corta');
@@ -198,10 +208,14 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
 
     render(<App />);
 
-    await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
-    await waitFor(() => fireEvent.click(screen.getByLabelText(`Editar ${mockAnalysisTypes[0].name}`)));
+    await waitFor(() => screen.getByRole('button', { name: /configuración/i }));
+    fireEvent.click(screen.getByRole('button', { name: /configuración/i }));
+    await waitFor(() => screen.getByLabelText(`Editar ${mockAnalysisTypes[0].name}`));
+    fireEvent.click(screen.getByLabelText(`Editar ${mockAnalysisTypes[0].name}`));
 
-    expect(screen.getByRole('heading', { name: /editar tipo de análisis/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /editar tipo de análisis/i })).toBeInTheDocument();
+    });
     // Código identificador se visualiza como inmutable
     expect(screen.getAllByText('executive-summary').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/inmutable \(preserva referencias de ejecución\)/i)).toBeInTheDocument();
