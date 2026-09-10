@@ -12,6 +12,24 @@
 
 services:
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - hitchings-net
+    environment:
+      POSTGRES_DB: hitchings_docs
+      POSTGRES_USER: hitchings_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_secret_123}
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hitchings_app -d hitchings_docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: .
@@ -21,10 +39,15 @@ services:
       - "8000"
     networks:
       - hitchings-net
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       APP_ENV: production
       APP_HOST: "0.0.0.0"
       APP_PORT: "8000"
+      DATABASE_URL: postgresql+psycopg://hitchings_app:${POSTGRES_PASSWORD:-local_dev_secret_123}@postgres:5432/hitchings_docs
+      SESSION_COOKIE_SECURE: "false"
       LOG_LEVEL: INFO
       GEMINI_API_KEY: ${GEMINI_API_KEY:-dummy-key-for-smoke-test}
       GEMINI_TRANSCRIPTION_MODEL: gemini-3.5-transcribe
@@ -62,10 +85,11 @@ services:
     ports:
       # Solo localhost — nunca exponer en 0.0.0.0 en local
       - "127.0.0.1:8080:80"
-    environment:
-      APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER:-hitchings}
-      APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD:-test1234}
 
 networks:
   hitchings-net:
     driver: bridge
+
+volumes:
+  postgres_data_local:
+

@@ -11,6 +11,27 @@
 services:
 
   # ----------------------------------------------------------
+  # Database — PostgreSQL 16 (solo red interna, volumen persistente)
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - hitchings-net
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hitchings_docs}
+      POSTGRES_USER: ${POSTGRES_USER:-hitchings_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hitchings_app} -d $${POSTGRES_DB:-hitchings_docs}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------
   # Backend — FastAPI (solo red interna, NO publicado al host)
   # ----------------------------------------------------------
   backend:
@@ -22,10 +43,15 @@ services:
       - "8000"
     networks:
       - hitchings-net
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       APP_ENV: production
       APP_HOST: "0.0.0.0"
       APP_PORT: "8000"
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-hitchings_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hitchings_docs}}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_TRANSCRIPTION_MODEL: ${GEMINI_TRANSCRIPTION_MODEL:-gemini-3.5-transcribe}
@@ -64,12 +90,13 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER}
-      APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD}
     # En producción Traefik/Dokploy gestiona el puerto externo.
     # NO se publican puertos aquí; Dokploy los asigna via labels.
 
 networks:
   hitchings-net:
     driver: bridge
+
+volumes:
+  postgres_data:
+

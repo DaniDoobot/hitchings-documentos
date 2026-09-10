@@ -14,6 +14,44 @@ export class ApiError extends Error {
   }
 }
 
+// Token CSRF en memoria RAM exclusivamente (nunca en localStorage / sessionStorage)
+let inMemoryCsrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null): void {
+  inMemoryCsrfToken = token;
+}
+
+export function getCsrfToken(): string | null {
+  return inMemoryCsrfToken;
+}
+
+function buildHeaders(options?: RequestInit): HeadersInit {
+  const method = (options?.method || 'GET').toUpperCase();
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && inMemoryCsrfToken) {
+    headers['X-CSRF-Token'] = inMemoryCsrfToken;
+  }
+
+  if (options?.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((val, key) => {
+        headers[key] = val;
+      });
+    } else if (Array.isArray(options.headers)) {
+      options.headers.forEach(([key, val]) => {
+        headers[key] = val;
+      });
+    } else {
+      Object.assign(headers, options.headers);
+    }
+  }
+
+  return headers;
+}
+
 export async function apiFetch<T>(
   endpoint: string,
   options?: RequestInit
@@ -21,11 +59,9 @@ export async function apiFetch<T>(
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
   const response = await fetch(url, {
+    credentials: 'include',
     ...options,
-    headers: {
-      Accept: 'application/json',
-      ...options?.headers,
-    },
+    headers: buildHeaders(options),
   });
 
   if (!response.ok) {
@@ -63,11 +99,13 @@ export async function apiFetchBlob(
 ): Promise<BlobResponse> {
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
+  const headers = buildHeaders(options);
+  delete (headers as Record<string, string>)['Accept']; // Permitir que fetch maneje el tipo binario o respete options
+
   const response = await fetch(url, {
+    credentials: 'include',
     ...options,
-    headers: {
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {

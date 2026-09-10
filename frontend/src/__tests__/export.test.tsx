@@ -274,6 +274,7 @@ describe('HITCHINGS Documentos - Exportación Word y UX (Bloque 6C)', () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.queryByText(/cargando catálogo/i)).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue(/Análisis Jurídico Integral/i)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('tab', { name: /pegar texto/i }));
@@ -297,6 +298,7 @@ describe('HITCHINGS Documentos - Exportación Word y UX (Bloque 6C)', () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.queryByText(/cargando catálogo/i)).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue(/Análisis Jurídico Integral/i)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('tab', { name: /pegar texto/i }));
@@ -331,6 +333,7 @@ describe('HITCHINGS Documentos - Exportación Word y UX (Bloque 6C)', () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.queryByText(/cargando catálogo/i)).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue(/Análisis Jurídico Integral/i)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('tab', { name: /pegar texto/i }));
@@ -363,6 +366,7 @@ describe('HITCHINGS Documentos - Exportación Word y UX (Bloque 6C)', () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.queryByText(/cargando catálogo/i)).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue(/Análisis Jurídico Integral/i)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('tab', { name: /pegar texto/i }));

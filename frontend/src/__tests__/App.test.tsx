@@ -44,6 +44,9 @@ describe('HITCHINGS Documentos - Frontend Base (Bloque 6A)', () => {
       expect(
         screen.queryByText(/Cargando catálogo de análisis.../i)
       ).not.toBeInTheDocument();
+      expect(
+        screen.getByDisplayValue(/Análisis Jurídico Integral/i)
+      ).toBeInTheDocument();
     });
   };
 
@@ -251,9 +254,11 @@ describe('HITCHINGS Documentos - Frontend Base (Bloque 6A)', () => {
 
     render(<App />);
 
-    expect(
-      screen.getByText(/Cargando catálogo de análisis.../i)
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Cargando catálogo de análisis.../i)
+      ).toBeInTheDocument();
+    });
 
     resolvePrompts!(mockPrompts);
 

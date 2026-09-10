@@ -30,9 +30,6 @@ RUN npm run build
 # -----------------------------------------------------------
 FROM nginx:1.27-alpine AS runtime
 
-# Instalar apache2-utils para htpasswd (generación de .htpasswd)
-RUN apk add --no-cache apache2-utils
-
 # Copiar configuración de Nginx
 COPY nginx.conf /etc/nginx/nginx.conf
 
@@ -44,13 +41,11 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 # Validar sintaxis de Nginx en build-time mediante copia temporal (sin depender de DNS en build)
-RUN touch /etc/nginx/.htpasswd \
-    && sed 's|http://backend:8000|http://127.0.0.1:8000|g' /etc/nginx/nginx.conf > /tmp/nginx-test.conf \
+RUN sed 's|http://backend:8000|http://127.0.0.1:8000|g' /etc/nginx/nginx.conf > /tmp/nginx-test.conf \
     && nginx -t -c /tmp/nginx-test.conf \
-    && rm -f /tmp/nginx-test.conf /etc/nginx/.htpasswd
+    && rm -f /tmp/nginx-test.conf
 
 # El puerto 80 queda documentado; el expose real lo gestiona Compose/Traefik
 EXPOSE 80
 
-# Las credenciales Basic Auth se inyectan en runtime — nunca en la imagen
 CMD ["/docker-entrypoint.sh"]

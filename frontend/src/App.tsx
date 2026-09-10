@@ -25,7 +25,9 @@ import type {
   AnalysisRequest,
   AudioTranscriptionUsage,
 } from './types/api';
-import { Sliders, AlertCircle } from 'lucide-react';
+import { Sliders, AlertCircle, Loader2 } from 'lucide-react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { Login } from './components/Login';
 
 interface CachedDocument {
   file: File;
@@ -42,7 +44,7 @@ interface CachedAudio {
   usage?: AudioTranscriptionUsage | null;
 }
 
-export function App() {
+function AuthenticatedApp() {
   // Navigation tab
   const [activeTab, setActiveTab] = useState<InputTab>('document');
 
@@ -434,6 +436,33 @@ export function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function AppContent() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="auth-loading-screen" role="status" aria-label="Cargando sesión">
+        <Loader2 className="auth-loading-spinner" size={36} />
+        <p className="auth-loading-text">Verificando sesión segura...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

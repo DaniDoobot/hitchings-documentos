@@ -30,8 +30,20 @@ class Settings(BaseSettings):
     MAX_ANALYSIS_INPUT_TOKENS: int = 900000
     MAX_EXPORT_CHARACTERS: int = 2000000
 
+    # Database & Session Configuration
+    DATABASE_URL: str = "postgresql+psycopg://hitchings_user:hitchings_pass@postgres:5432/hitchings_docs"
+    SESSION_COOKIE_NAME: str = "hyg_session"
+    SESSION_TTL_HOURS: int = 12
+    SESSION_COOKIE_SECURE: bool | None = None
+
     # CORS Configuration
     CORS_ALLOWED_ORIGINS: str = "http://localhost:5173"
+
+    @property
+    def is_cookie_secure(self) -> bool:
+        if self.SESSION_COOKIE_SECURE is not None:
+            return self.SESSION_COOKIE_SECURE
+        return self.APP_ENV.lower() == "production"
 
     @property
     def cors_origins_list(self) -> list[str]:
