@@ -184,7 +184,8 @@ Usuario → Backend HITCHINGS → Gemini Files API → Interactions API → Elim
 ```
 * **Sin almacenamiento permanente**: HITCHINGS no almacena de forma persistente los archivos de audio.
 * **Archivos temporales locales**: Se escriben en streaming seguro y se eliminan siempre en un bloque `finally`, tanto si la llamada concluye con éxito como ante cualquier excepción.
-* **Eliminación remota garantizada**: El archivo subido a Gemini Files API se elimina de forma explícita e inmediata tras la interacción mediante `client.files.delete(name)`.
+* **Interactions API sin almacenamiento (`store=False`)**: La llamada a `client.interactions.create` se ejecuta explícitamente con `store=False`, deshabilitando el almacenamiento de la interacción en el proyecto de Gemini y operando de forma 100% stateless.
+* **Eliminación remota garantizada**: El archivo subido a Gemini Files API se elimina de forma explícita e inmediata tras la transcripción mediante `client.files.delete(name)` en bloque `finally`.
 * **Confidencialidad absoluta en logs**: No se registran nombres originales de archivos, ni palabras transcritas, ni datos personales. Solo métricas numéricas técnicas (bytes, duración en ms, recuento de palabras).
 
 **Ejemplo de llamada con cURL:**
@@ -291,7 +292,7 @@ RESPUESTA API (título, contenido en Markdown, advertencias, métricas de tokens
 * **Nivel de Pensamiento (Thinking Level)**: Configurable mediante `GEMINI_ANALYSIS_THINKING_LEVEL` (`medium` por defecto; valores admitidos: `low`, `medium`, `high`).
 * **Límite Operativo de Tokens (Pre-vuelo)**: Configurado con `MAX_ANALYSIS_INPUT_TOKENS` (900.000 tokens por defecto). Antes de invocar la generación, se realiza un conteo oficial de tokens (`client.models.count_tokens`). Si se supera el límite operativo, se rechaza de inmediato con **HTTP 413** sin invocar `interactions.create`.
 * **Cero Herramientas Externas**: No se habilitan ni conectan herramientas como Google Search, URL Context, File Search, Function Calling ni RAG. El análisis se realiza estrictamente sobre el material suministrado.
-* **Sin Persistencia**: Ni los textos sometidos ni las respuestas generadas se almacenan en disco ni en base de datos.
+* **Modo Stateless en Gemini Interactions (`store=False`)**: Todas las llamadas a `client.interactions.create` se configuran explícitamente con `store=False`. La aplicación no utiliza almacenamiento server-side de Interactions ni funcionalidades dependientes de historial (`previous_interaction_id`). Ni los textos sometidos ni las respuestas generadas se almacenan en disco ni en base de datos.
 * **Separación de Instrucciones y Mitigación de Prompt Injection**:
   * `system_instruction`: Se transmiten de forma nativa e independiente las directrices inviolables del sistema: deber de veracidad estricta, prohibición de invención/alucinación, obligación de reportar omisiones y directriz explícita de tratar el contenido documental como datos pasivos no confiables.
   * `input`: Contiene de manera delimitada por capas la plantilla del prompt, las opciones de salida (`detail_level`, `output_format`), las instrucciones adicionales del usuario y el texto documental encapsulado dentro de un bloque ` ```document_content `. Cualquier directriz imperativa encontrada dentro del documento ("ignora instrucciones", etc.) es tratada como dato textual objeto de examen, no como orden ejecutable.
@@ -676,7 +677,7 @@ Dokploy / Traefik  (Terminación TLS, gestión de dominio)
   * `Permissions-Policy: camera=(), microphone=(), geolocation=()`
   * `Content-Security-Policy: default-src 'self' ...`
 * **Healthchecks Docker nativos**: El servicio backend incluye un healthcheck nativo con Python stdlib (`urllib.request`) sobre `http://127.0.0.1:8000/health` sin dependencias externas (curl/wget).
-* **Ausencia de persistencia innecesaria**: El sistema no requiere ni incluye bases de datos relacionales (PostgreSQL), colas/cachés externas (Redis) ni volúmenes persistentes. Toda la memoria se gestiona en el ciclo de vida de la petición.
+* **Ausencia de persistencia y modo stateless (`store=False`)**: El sistema no requiere ni incluye bases de datos relacionales (PostgreSQL), colas/cachés externas (Redis) ni volúmenes persistentes. Toda la memoria se gestiona en el ciclo de vida de la petición. Asimismo, las llamadas a Google Gemini Interactions API (`gemini-3.8-flash` para análisis y `gemini-3.5-transcribe` para transcripción de audio) configuran explícitamente `store=False`, deshabilitando el almacenamiento server-side de las interacciones en el proyecto de Gemini y eliminando explícitamente los archivos temporales de audio en Files API tras su procesamiento.
 
 ### Variables de Entorno en Producción
 

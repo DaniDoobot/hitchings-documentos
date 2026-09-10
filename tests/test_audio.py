@@ -368,6 +368,8 @@ def test_gemini_client_transcribe_audio_interactions_api_verbatim():
     mock_genai_client.interactions.create.assert_called_once()
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
     assert call_kwargs["model"] == settings.GEMINI_TRANSCRIPTION_MODEL
+    assert call_kwargs.get("store") is False
+    assert "previous_interaction_id" not in call_kwargs
     assert call_kwargs["input"] == [
         {"type": "audio", "uri": mock_remote_file.uri, "mime_type": "audio/wav"}
     ]
@@ -429,6 +431,8 @@ def test_gemini_client_transcribe_audio_interactions_api_verbatim_with_diarizati
     assert usage is None
 
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
+    assert call_kwargs.get("store") is False
+    assert "previous_interaction_id" not in call_kwargs
     assert call_kwargs["generation_config"] == {
         "transcription_config": {
             "mode": {
@@ -472,6 +476,8 @@ def test_gemini_client_transcribe_audio_interactions_api_smart():
     assert usage is None
 
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
+    assert call_kwargs.get("store") is False
+    assert "previous_interaction_id" not in call_kwargs
     assert call_kwargs["generation_config"] == {
         "transcription_config": {
             "mode": "smart",
@@ -614,5 +620,37 @@ def test_audio_endpoint_handles_null_usage(client: TestClient, mock_gemini):
     assert response.status_code == 200
     data = response.json()
     assert data["usage"] is None
+
+
+def test_audio_transcription_interactions_create_explicitly_disables_storage():
+    """Verifica que la transcripción de audio invoca Interactions API con store=False explícito y sin previous_interaction_id."""
+    from app.services.gemini_client import GeminiClient
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "Texto transcrito."
+    mock_interaction.steps = []
+    mock_interaction.detected_language = None
+    mock_interaction.usage = None
+
+    mock_genai_client.interactions.create.return_value = mock_interaction
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_audio_store"
+    mock_remote_file.mime_type = "audio/wav"
+
+    text, segments, detected_lang, usage = client.transcribe_audio(
+        remote_file=mock_remote_file,
+        mode="verbatim",
+        diarization=False,
+    )
+
+    mock_genai_client.interactions.create.assert_called_once()
+    call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
+    assert call_kwargs.get("store") is False
+    assert "previous_interaction_id" not in call_kwargs
+
 
 

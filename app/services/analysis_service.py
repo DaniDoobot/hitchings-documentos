@@ -154,6 +154,7 @@ class DocumentAnalysisService:
                 model=settings.GEMINI_ANALYSIS_MODEL,
                 system_instruction=system_instruction,
                 input=user_input,
+                store=False,
                 generation_config=generation_config,
                 response_format=response_format,
             )

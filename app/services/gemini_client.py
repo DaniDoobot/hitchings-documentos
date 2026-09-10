@@ -124,6 +124,7 @@ class GeminiClient:
             interaction = client.interactions.create(
                 model=settings.GEMINI_TRANSCRIPTION_MODEL,
                 input=input_payload,
+                store=False,
                 generation_config=generation_config,
             )
         except APIError as exc:

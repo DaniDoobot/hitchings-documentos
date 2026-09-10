@@ -269,6 +269,24 @@ def test_analysis_uses_interactions_create(client: TestClient, mock_gemini_analy
     assert response.status_code == 200
     assert genai_client.interactions.create.called
     assert not getattr(genai_client.models, "generate_content", MagicMock()).called
+    call_kwargs = genai_client.interactions.create.call_args[1]
+    assert call_kwargs.get("store") is False
+    assert "previous_interaction_id" not in call_kwargs
+
+
+def test_analysis_interactions_create_explicitly_disables_storage(client: TestClient, mock_gemini_analysis):
+    """Verifica que el análisis invoca Interactions API con store=False explícito y sin previous_interaction_id."""
+    genai_client = mock_gemini_analysis["genai_client"]
+    payload = {
+        "text": "Texto para verificación de store=False en análisis.",
+        "prompt_id": "legal-analysis",
+    }
+    response = client.post("/api/v1/analysis", json=payload)
+    assert response.status_code == 200
+    assert genai_client.interactions.create.called
+    call_kwargs = genai_client.interactions.create.call_args[1]
+    assert call_kwargs.get("store") is False
+    assert "previous_interaction_id" not in call_kwargs
 
 
 # 15. Modelo configurable en settings
