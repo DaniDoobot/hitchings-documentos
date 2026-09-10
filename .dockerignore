@@ -11,7 +11,8 @@ __pycache__
 .pytest_cache
 .coverage
 tests
-scripts
+scripts/*
+!scripts/create_admin.py
 frontend
 .env
 .env.*
