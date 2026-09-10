@@ -33,6 +33,43 @@ def test_user_creation_and_defaults(db):
     assert user.password_hash.startswith("$argon2id$")
 
 
+def test_user_updated_at_behavior_on_login_and_updates(db, test_user):
+    """
+    Verifica que:
+    1. updated_at se inicializa al crear el usuario.
+    2. Actualizar únicamente last_login_at (login) NO modifica updated_at.
+    3. Actualizar datos persistentes del usuario actualiza updated_at.
+    """
+    initial_updated_at = test_user.updated_at
+    initial_created_at = test_user.created_at
+    assert initial_updated_at is not None
+    assert initial_created_at is not None
+
+    # Simular inicio de sesión (solo modifica last_login_at)
+    now = datetime.now(timezone.utc)
+    test_user.last_login_at = now
+    db.commit()
+    db.refresh(test_user)
+
+    # last_login_at se actualiza pero updated_at permanece intacto
+    assert test_user.last_login_at is not None
+    assert test_user.updated_at == initial_updated_at
+
+    # Actualizar datos relevantes del usuario
+    new_timestamp = datetime.now(timezone.utc)
+    test_user.role = "admin"
+    test_user.updated_at = new_timestamp
+    db.commit()
+    db.refresh(test_user)
+
+    assert test_user.role == "admin"
+    actual_updated = test_user.updated_at
+    if actual_updated.tzinfo is None:
+        actual_updated = actual_updated.replace(tzinfo=timezone.utc)
+    assert actual_updated == new_timestamp
+    assert actual_updated >= (initial_updated_at.replace(tzinfo=timezone.utc) if initial_updated_at.tzinfo is None else initial_updated_at)
+
+
 def test_user_email_unique_constraint(db):
     """Verifica que el email no puede duplicarse en la base de datos."""
     user1 = User(

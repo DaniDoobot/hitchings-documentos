@@ -25,6 +25,7 @@ class UserPublicResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    updated_at: datetime
     last_login_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -41,7 +42,9 @@ class AuthResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    updated_at: datetime
     last_login_at: Optional[datetime] = None
     csrf_token: str
 
     model_config = ConfigDict(from_attributes=True)
+

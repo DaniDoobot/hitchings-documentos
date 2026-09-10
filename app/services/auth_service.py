@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session as DbSession, joinedload
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.security import generate_random_token, hash_token, verify_password
+from app.core.security import derive_csrf_token, generate_random_token, hash_token, verify_password
 from app.models.session import Session
 from app.models.user import User
 
@@ -45,16 +45,19 @@ class AuthService:
           (entidad_sesión, raw_session_token, raw_csrf_token)
         Solo los hashes SHA-256 de ambos tokens se persisten en base de datos.
         """
+        session_id = uuid.uuid4()
         raw_session_token = generate_random_token(32)
-        raw_csrf_token = generate_random_token(32)
-
         token_hash = hash_token(raw_session_token)
+
+        # Derivación determinista HMAC del token CSRF vinculado a esta sesión
+        raw_csrf_token = derive_csrf_token(session_id, token_hash)
         csrf_token_hash = hash_token(raw_csrf_token)
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(hours=settings.SESSION_TTL_HOURS)
 
         session_entry = Session(
+            id=session_id,
             user_id=user.id,
             token_hash=token_hash,
             csrf_token_hash=csrf_token_hash,
@@ -63,7 +66,7 @@ class AuthService:
             last_seen_at=now,
         )
 
-        # Actualizar last_login_at en el usuario
+        # Actualizar last_login_at en el usuario (sin alterar updated_at)
         user.last_login_at = now
 
         db.add(session_entry)

@@ -29,6 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: response.role,
             is_active: response.is_active,
             created_at: response.created_at,
+            updated_at: response.updated_at,
             last_login_at: response.last_login_at,
           });
           setCsrfToken(response.csrf_token);
@@ -60,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role: response.role,
       is_active: response.is_active,
       created_at: response.created_at,
+      updated_at: response.updated_at,
       last_login_at: response.last_login_at,
     });
     setCsrfToken(response.csrf_token);

@@ -48,6 +48,7 @@ services:
       APP_PORT: "8000"
       DATABASE_URL: postgresql+psycopg://hitchings_app:${POSTGRES_PASSWORD:-local_dev_secret_123}@postgres:5432/hitchings_docs
       SESSION_COOKIE_SECURE: "false"
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-local_dev_secret_key_at_least_32_chars_long!}
       LOG_LEVEL: INFO
       GEMINI_API_KEY: ${GEMINI_API_KEY:-dummy-key-for-smoke-test}
       GEMINI_TRANSCRIPTION_MODEL: gemini-3.5-transcribe

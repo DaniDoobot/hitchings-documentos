@@ -35,9 +35,28 @@ class Settings(BaseSettings):
     SESSION_COOKIE_NAME: str = "hyg_session"
     SESSION_TTL_HOURS: int = 12
     SESSION_COOKIE_SECURE: bool | None = None
+    SESSION_SECRET_KEY: str = ""
 
     # CORS Configuration
     CORS_ALLOWED_ORIGINS: str = "http://localhost:5173"
+
+    @property
+    def effective_session_secret(self) -> bytes:
+        """
+        Retorna la clave secreta del servidor para la derivación HMAC del CSRF token.
+        En producción es obligatoria y debe contar con al menos 32 caracteres.
+        En desarrollo y pruebas automatizadas proporciona un valor determinista por defecto.
+        """
+        if self.SESSION_SECRET_KEY:
+            if len(self.SESSION_SECRET_KEY) < 32 and self.APP_ENV.lower() == "production":
+                raise ValueError("SESSION_SECRET_KEY debe contener al menos 32 caracteres en producción.")
+            return self.SESSION_SECRET_KEY.encode("utf-8")
+        if self.APP_ENV.lower() == "production":
+            raise ValueError(
+                "SESSION_SECRET_KEY es obligatoria en entorno de producción. "
+                "Configure una clave aleatoria fuerte de al menos 32 caracteres."
+            )
+        return b"dev-insecure-session-secret-key-32b-minimum-for-hmac!!"
 
     @property
     def is_cookie_secure(self) -> bool:

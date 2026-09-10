@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session as DbSession
 from app.api.deps import get_current_session, get_current_user, get_db, verify_csrf
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.security import generate_random_token, hash_token
+from app.core.security import derive_csrf_token
 from app.models.session import Session as SessionModel
 from app.models.user import User as UserModel
 from app.schemas.auth import AuthResponse, LoginRequest
@@ -60,6 +60,7 @@ async def login(
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
+        updated_at=user.updated_at,
         last_login_at=user.last_login_at,
         csrf_token=raw_csrf_token,
     )
@@ -69,16 +70,13 @@ async def login(
 async def get_me(
     current_user: UserModel = Depends(get_current_user),
     session_entry: SessionModel = Depends(get_current_session),
-    db: DbSession = Depends(get_db),
 ):
     """
     Verifica la cookie de sesión activa y retorna los datos del usuario
-    junto al CSRF token requerido por el frontend para peticiones mutables.
+    junto al CSRF token estable derivado criptográficamente para la sesión.
+    No rota el token ni invalida pestañas concurrentes.
     """
-    # Generar un nuevo CSRF token en cada verificación para refrescar la protección
-    raw_csrf_token = generate_random_token(32)
-    session_entry.csrf_token_hash = hash_token(raw_csrf_token)
-    db.commit()
+    csrf_token = derive_csrf_token(session_entry.id, session_entry.token_hash)
 
     return AuthResponse(
         id=current_user.id,
@@ -86,8 +84,9 @@ async def get_me(
         role=current_user.role,
         is_active=current_user.is_active,
         created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
         last_login_at=current_user.last_login_at,
-        csrf_token=raw_csrf_token,
+        csrf_token=csrf_token,
     )
 
 

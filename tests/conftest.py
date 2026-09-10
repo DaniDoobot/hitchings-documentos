@@ -105,26 +105,13 @@ def test_admin_user(db):
     return admin
 
 
+from app.services.auth_service import auth_service
+
+
 @pytest.fixture
 def active_session_tokens(db, test_user):
     """Crea una sesión activa para test_user y retorna (session_model, raw_session_token, raw_csrf_token)."""
-    raw_session_token = generate_random_token(32)
-    raw_csrf_token = generate_random_token(32)
-    now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(hours=12)
-
-    sess = Session(
-        user_id=test_user.id,
-        token_hash=hash_token(raw_session_token),
-        csrf_token_hash=hash_token(raw_csrf_token),
-        created_at=now,
-        expires_at=expires_at,
-        last_seen_at=now,
-    )
-    db.add(sess)
-    db.commit()
-    db.refresh(sess)
-    return sess, raw_session_token, raw_csrf_token
+    return auth_service.create_session(db, test_user)
 
 
 @pytest.fixture
