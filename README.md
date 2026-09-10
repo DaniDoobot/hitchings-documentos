@@ -730,3 +730,21 @@ Para el despliegue productivo final:
 2. Asignar las variables de entorno documentadas en `.env.production.example`.
 3. Dokploy/Traefik enrutará el tráfico HTTPS del dominio directamente al servicio `frontend` (puerto 80).
 
+---
+
+## Control de Acceso y Gestión de Usuarios (Bloque 7B)
+
+HITCHINGS Y GONZALEZ DOCUMENTOS implementa un modelo de autenticación y autorización basado en roles gestionado íntegramente por administradores:
+
+### Roles de Usuario
+* **`admin` (Administrador)**: Acceso total al procesamiento documental y a la sección **Configuración → Usuarios** para crear, editar, activar/desactivar y restablecer contraseñas de cualquier cuenta.
+* **`user` (Usuario)**: Acceso exclusivo a los flujos analíticos (documentos, audios, textos, prompts y exportaciones). Sin visibilidad ni privilegios sobre las herramientas administrativas.
+
+### Principios Operativos y de Seguridad
+* **Sin registro público**: No existen endpoints de autoregistro. El acceso es estrictamente corporativo y todas las cuentas son creadas por administradores autenticados (`POST /api/v1/admin/users`).
+* **Revocación inmediata en desactivación**: Al marcar un usuario como inactivo (`is_active: false`), el backend revoca y purga de inmediato todas las sesiones activas asociadas en la tabla `sessions`.
+* **Revocación inmediata en cambio de contraseña**: Al restablecer una contraseña (`POST /api/v1/admin/users/{id}/password`), el hash se actualiza mediante **Argon2id** y se eliminan al instante todas las sesiones vigentes del usuario, exigiendo reautenticación.
+* **Sin borrado físico (`soft delete`)**: No se permite eliminación física (`DELETE`) en base de datos para preservar la trazabilidad operativa y coherencia de auditoría. La baja se realiza desactivando la cuenta.
+* **Protección del último administrador activo**: El sistema impide de forma estricta que el único administrador activo sea desactivado o degradado a usuario normal, evitando bloqueos irreversibles.
+* **Protección CSRF**: Todas las peticiones administrativas mutativas (`POST`, `PATCH`) exigen la cabecera `X-CSRF-Token` validada contra el hash en base de datos.
+

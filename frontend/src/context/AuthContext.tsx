@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => Promise<void>;
+  updateCurrentUser: (partial: Partial<UserPublic>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -78,8 +79,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const updateCurrentUser = useCallback((partial: Partial<UserPublic>) => {
+    setUser((prev) => (prev ? { ...prev, ...partial } : null));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, updateCurrentUser }}>
       {children}
     </AuthContext.Provider>
   );

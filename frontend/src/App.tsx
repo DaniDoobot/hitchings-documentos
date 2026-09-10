@@ -8,6 +8,7 @@ import { PromptSelector } from './components/PromptSelector';
 import { AnalysisOptionsControl } from './components/AnalysisOptionsControl';
 import { AnalyzeButton } from './components/AnalyzeButton';
 import { AnalysisResult } from './components/AnalysisResult';
+import { UsersManagement } from './components/UsersManagement';
 import { fetchPrompts } from './api/prompts';
 import { extractDocument } from './api/documents';
 import { transcribeAudio } from './api/audio';
@@ -46,7 +47,15 @@ interface CachedAudio {
 }
 
 function AuthenticatedApp() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const [activeSection, setActiveSection] = useState<'analysis' | 'settings'>('analysis');
+
+  // Si el usuario deja de tener rol de administrador, regresar inmediatamente a la vista de análisis
+  useEffect(() => {
+    if (user?.role !== 'admin' && activeSection === 'settings') {
+      setActiveSection('analysis');
+    }
+  }, [user?.role, activeSection]);
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<InputTab>('document');
@@ -328,118 +337,124 @@ function AuthenticatedApp() {
 
   return (
     <div className="app-container">
-      <Header />
+      <Header activeSection={activeSection} onSelectSection={setActiveSection} />
 
       <main className="app-main">
-        {generalError && (
-          <div className="banner banner-danger" role="alert">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <AlertCircle size={18} />
-              <span>{generalError}</span>
+        {activeSection === 'settings' && user?.role === 'admin' ? (
+          <UsersManagement />
+        ) : (
+          <>
+            {generalError && (
+              <div className="banner banner-danger" role="alert">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <AlertCircle size={18} />
+                  <span>{generalError}</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary-sm"
+                  onClick={() => setGeneralError(null)}
+                >
+                  Cerrar
+                </button>
+              </div>
+            )}
+
+            <div className="workspace-grid">
+              {/* Left panel: Input avenues */}
+              <section className="card" aria-label="Entrada de contenido">
+                <InputTabs activeTab={activeTab} onSelectTab={setActiveTab} />
+
+                <div className="card-body">
+                  {activeTab === 'document' && (
+                    <DocumentArea
+                      selectedFile={documentFile}
+                      onFileSelect={handleDocumentChange}
+                      error={documentError}
+                      onError={setDocumentError}
+                    />
+                  )}
+
+                  {activeTab === 'audio' && (
+                    <AudioArea
+                      selectedFile={audioFile}
+                      onFileSelect={handleAudioFileChange}
+                      error={audioError}
+                      onError={setAudioError}
+                      mode={audioMode}
+                      onModeChange={handleAudioModeChange}
+                      diarization={audioDiarization}
+                      onDiarizationChange={handleAudioDiarizationChange}
+                    />
+                  )}
+
+                  {activeTab === 'text' && (
+                    <TextArea
+                      text={textContent}
+                      onTextChange={handleTextChange}
+                    />
+                  )}
+                </div>
+              </section>
+
+              {/* Right panel: Analysis parameters */}
+              <section className="card" aria-label="Opciones de análisis">
+                <div className="card-header">
+                  <h2 className="card-title">
+                    <Sliders size={18} color="#2563eb" />
+                    Configuración del Análisis
+                  </h2>
+                  <p className="card-description">
+                    Selecciona la plantilla de análisis y personaliza los parámetros de salida.
+                  </p>
+                </div>
+
+                <div className="card-body">
+                  <PromptSelector
+                    prompts={prompts}
+                    selectedPromptId={selectedPromptId}
+                    onSelectPrompt={setSelectedPromptId}
+                    isLoading={isPromptsLoading}
+                    error={promptsError}
+                    onRetry={loadPromptsCatalog}
+                  />
+
+                  <AnalysisOptionsControl
+                    detailLevel={detailLevel}
+                    onDetailLevelChange={setDetailLevel}
+                    outputFormat={outputFormat}
+                    onOutputFormatChange={setOutputFormat}
+                    additionalInstructions={additionalInstructions}
+                    onAdditionalInstructionsChange={setAdditionalInstructions}
+                  />
+
+                  <AnalyzeButton
+                    tab={activeTab}
+                    hasContent={hasContent}
+                    hasPrompt={hasPrompt}
+                    isProcessing={isProcessing}
+                    processingMessage={getProcessingMessage()}
+                    onClick={handleStartAnalysis}
+                  />
+                </div>
+              </section>
             </div>
-            <button
-              type="button"
-              className="btn-secondary-sm"
-              onClick={() => setGeneralError(null)}
-            >
-              Cerrar
-            </button>
-          </div>
-        )}
 
-        <div className="workspace-grid">
-          {/* Left panel: Input avenues */}
-          <section className="card" aria-label="Entrada de contenido">
-            <InputTabs activeTab={activeTab} onSelectTab={setActiveTab} />
-
-            <div className="card-body">
-              {activeTab === 'document' && (
-                <DocumentArea
-                  selectedFile={documentFile}
-                  onFileSelect={handleDocumentChange}
-                  error={documentError}
-                  onError={setDocumentError}
+            {/* Render Result when available */}
+            {analysisResult && (
+              <section
+                ref={resultRef}
+                className="analysis-result-section"
+                aria-label="Resultado del análisis"
+              >
+                <AnalysisResult
+                  analysis={analysisResult}
+                  processingWarnings={processingWarnings}
+                  transcriptionUsage={transcriptionUsage}
                 />
-              )}
-
-              {activeTab === 'audio' && (
-                <AudioArea
-                  selectedFile={audioFile}
-                  onFileSelect={handleAudioFileChange}
-                  error={audioError}
-                  onError={setAudioError}
-                  mode={audioMode}
-                  onModeChange={handleAudioModeChange}
-                  diarization={audioDiarization}
-                  onDiarizationChange={handleAudioDiarizationChange}
-                />
-              )}
-
-              {activeTab === 'text' && (
-                <TextArea
-                  text={textContent}
-                  onTextChange={handleTextChange}
-                />
-              )}
-            </div>
-          </section>
-
-          {/* Right panel: Analysis parameters */}
-          <section className="card" aria-label="Opciones de análisis">
-            <div className="card-header">
-              <h2 className="card-title">
-                <Sliders size={18} color="#2563eb" />
-                Configuración del Análisis
-              </h2>
-              <p className="card-description">
-                Selecciona la plantilla de análisis y personaliza los parámetros de salida.
-              </p>
-            </div>
-
-            <div className="card-body">
-              <PromptSelector
-                prompts={prompts}
-                selectedPromptId={selectedPromptId}
-                onSelectPrompt={setSelectedPromptId}
-                isLoading={isPromptsLoading}
-                error={promptsError}
-                onRetry={loadPromptsCatalog}
-              />
-
-              <AnalysisOptionsControl
-                detailLevel={detailLevel}
-                onDetailLevelChange={setDetailLevel}
-                outputFormat={outputFormat}
-                onOutputFormatChange={setOutputFormat}
-                additionalInstructions={additionalInstructions}
-                onAdditionalInstructionsChange={setAdditionalInstructions}
-              />
-
-              <AnalyzeButton
-                tab={activeTab}
-                hasContent={hasContent}
-                hasPrompt={hasPrompt}
-                isProcessing={isProcessing}
-                processingMessage={getProcessingMessage()}
-                onClick={handleStartAnalysis}
-              />
-            </div>
-          </section>
-        </div>
-
-        {/* Render Result when available */}
-        {analysisResult && (
-          <section
-            ref={resultRef}
-            className="analysis-result-section"
-            aria-label="Resultado del análisis"
-          >
-            <AnalysisResult
-              analysis={analysisResult}
-              processingWarnings={processingWarnings}
-              transcriptionUsage={transcriptionUsage}
-            />
-          </section>
+              </section>
+            )}
+          </>
         )}
       </main>
     </div>

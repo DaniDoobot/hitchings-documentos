@@ -1,9 +1,18 @@
 import React from 'react';
-import { ShieldCheck, LogOut, User as UserIcon } from 'lucide-react';
+import { ShieldCheck, LogOut, User as UserIcon, Settings, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  activeSection?: 'analysis' | 'settings';
+  onSelectSection?: (section: 'analysis' | 'settings') => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  activeSection = 'analysis',
+  onSelectSection,
+}) => {
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   return (
     <header className="app-header">
@@ -21,6 +30,29 @@ export const Header: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {isAdmin && onSelectSection && (
+          <nav className="header-nav" aria-label="Navegación principal">
+            <button
+              type="button"
+              className={`header-nav-btn ${activeSection === 'analysis' ? 'active' : ''}`}
+              onClick={() => onSelectSection('analysis')}
+              aria-current={activeSection === 'analysis' ? 'page' : undefined}
+            >
+              <FileText size={15} />
+              <span>Análisis</span>
+            </button>
+            <button
+              type="button"
+              className={`header-nav-btn ${activeSection === 'settings' ? 'active' : ''}`}
+              onClick={() => onSelectSection('settings')}
+              aria-current={activeSection === 'settings' ? 'page' : undefined}
+            >
+              <Settings size={15} />
+              <span>Configuración</span>
+            </button>
+          </nav>
+        )}
 
         <div className="header-right">
           <div className="header-status">
@@ -52,4 +84,3 @@ export const Header: React.FC = () => {
     </header>
   );
 };
-

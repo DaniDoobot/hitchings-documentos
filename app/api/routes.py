@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from app.api.deps import get_current_user, verify_csrf
+from app.api.deps import get_current_user, require_admin, verify_csrf
+from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.audio import router as audio_router
 from app.api.v1.auth import router as auth_router
@@ -14,7 +15,7 @@ router = APIRouter()
 # Rutas de autenticación (login público, me y logout con su propia gestión interna)
 router.include_router(auth_router, prefix="/api/v1")
 
-# Rutas funcionales protegidas (requieren sesión activa y CSRF en mutaciones)
+# Rutas funcionales protegidas para cualquier usuario autenticado (requieren sesión activa y CSRF en mutaciones)
 auth_dependencies = [Depends(get_current_user), Depends(verify_csrf)]
 
 router.include_router(documents_router, prefix="/api/v1", dependencies=auth_dependencies)
@@ -23,6 +24,10 @@ router.include_router(text_router, prefix="/api/v1", dependencies=auth_dependenc
 router.include_router(prompts_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(analysis_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(export_router, prefix="/api/v1", dependencies=auth_dependencies)
+
+# Rutas administrativas protegidas (requieren rol admin y CSRF en mutaciones)
+admin_dependencies = [Depends(require_admin), Depends(verify_csrf)]
+router.include_router(admin_users_router, prefix="/api/v1", dependencies=admin_dependencies)
 
 
 @router.get("/", summary="Estado del servicio")

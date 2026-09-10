@@ -126,3 +126,20 @@ def client(active_session_tokens):
         tc.cookies.set(settings.SESSION_COOKIE_NAME, raw_session_token)
         tc.headers.update({"X-CSRF-Token": raw_csrf_token})
         yield tc
+
+
+@pytest.fixture
+def admin_session_tokens(db, test_admin_user):
+    """Crea una sesión activa para test_admin_user y retorna (session_model, raw_session_token, raw_csrf_token)."""
+    return auth_service.create_session(db, test_admin_user)
+
+
+@pytest.fixture
+def admin_client(admin_session_tokens):
+    """TestClient pre-autenticado como usuario administrador con CSRF configurado."""
+    _, raw_session_token, raw_csrf_token = admin_session_tokens
+    with TestClient(app) as tc:
+        tc.cookies.set(settings.SESSION_COOKIE_NAME, raw_session_token)
+        tc.headers.update({"X-CSRF-Token": raw_csrf_token})
+        yield tc
+
