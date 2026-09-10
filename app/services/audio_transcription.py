@@ -212,12 +212,17 @@ class AudioTranscriptionService:
             remote_file_name = getattr(remote_file, "name", None)
 
             # 5. Transcripción con Gemini Interactions API
-            raw_text, segments, detected_language = self.client.transcribe_audio(
+            transcribe_result = self.client.transcribe_audio(
                 remote_file=remote_file,
                 mode=mode,
                 diarization=diarization,
                 language=language,
             )
+            if len(transcribe_result) >= 4:
+                raw_text, segments, detected_language, usage = transcribe_result[:4]
+            else:
+                raw_text, segments, detected_language = transcribe_result
+                usage = None
 
             # 6. Normalización conservadora de texto (respetando verbatim)
             normalized_text = normalize_text(raw_text)
@@ -226,8 +231,12 @@ class AudioTranscriptionService:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
             # 7. Log técnico seguro (cero nombres de archivo, cero texto, cero PII)
+            in_tok_str = str(usage.input_tokens) if usage and usage.input_tokens is not None else "n/a"
+            out_tok_str = str(usage.output_tokens) if usage and usage.output_tokens is not None else "n/a"
+            tot_tok_str = str(usage.total_tokens) if usage and usage.total_tokens is not None else "n/a"
+
             logger.info(
-                "Transcripción de audio completada | Ext: %s | Tamaño: %d B | Modo: %s | Diarización: %s | Idioma sol.: %s | Palabras: %d | Tiempo: %.2f ms | Segmentos: %d",
+                "Transcripción de audio completada | Ext: %s | Tamaño: %d B | Modo: %s | Diarización: %s | Idioma sol.: %s | Palabras: %d | Tiempo: %.2f ms | Segmentos: %d | Tokens in: %s | Tokens out: %s | Tokens total: %s",
                 extension,
                 size_bytes,
                 mode,
@@ -236,6 +245,9 @@ class AudioTranscriptionService:
                 word_count,
                 elapsed_ms,
                 len(segments),
+                in_tok_str,
+                out_tok_str,
+                tot_tok_str,
             )
 
             return AudioTranscribeResponse(
@@ -253,6 +265,7 @@ class AudioTranscriptionService:
                 character_count=character_count,
                 segments=segments,
                 warnings=warnings,
+                usage=usage,
             )
         finally:
             # 8. Borrado remoto OBLIGATORIO de Gemini Files API (éxito o error)

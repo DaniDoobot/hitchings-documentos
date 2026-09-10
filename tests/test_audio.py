@@ -354,7 +354,7 @@ def test_gemini_client_transcribe_audio_interactions_api_verbatim():
     mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_file_id"
     mock_remote_file.mime_type = "audio/wav"
 
-    text, segments, detected_lang = client.transcribe_audio(
+    text, segments, detected_lang, usage = client.transcribe_audio(
         remote_file=mock_remote_file,
         mode="verbatim",
         diarization=False,
@@ -363,6 +363,7 @@ def test_gemini_client_transcribe_audio_interactions_api_verbatim():
     assert text == "Transcripción literal verbatim."
     assert segments == []
     assert detected_lang is None
+    assert usage is None
 
     mock_genai_client.interactions.create.assert_called_once()
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
@@ -411,7 +412,7 @@ def test_gemini_client_transcribe_audio_interactions_api_verbatim_with_diarizati
     mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_file_id"
     mock_remote_file.mime_type = "audio/mp3"
 
-    text, segments, detected_lang = client.transcribe_audio(
+    text, segments, detected_lang, usage = client.transcribe_audio(
         remote_file=mock_remote_file,
         mode="verbatim",
         diarization=True,
@@ -425,6 +426,7 @@ def test_gemini_client_transcribe_audio_interactions_api_verbatim_with_diarizati
     assert segments[1].speaker == "spk_2"
     assert segments[1].text == "Tiene la palabra la defensa."
     assert detected_lang is None
+    assert usage is None
 
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
     assert call_kwargs["generation_config"] == {
@@ -458,7 +460,7 @@ def test_gemini_client_transcribe_audio_interactions_api_smart():
     mock_remote_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test_file_id"
     mock_remote_file.mime_type = "audio/ogg"
 
-    text, segments, detected_lang = client.transcribe_audio(
+    text, segments, detected_lang, usage = client.transcribe_audio(
         remote_file=mock_remote_file,
         mode="smart",
         diarization=False,
@@ -467,6 +469,7 @@ def test_gemini_client_transcribe_audio_interactions_api_smart():
     assert text == "Texto limpio en modo smart."
     assert segments == []
     assert detected_lang == "es"
+    assert usage is None
 
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
     assert call_kwargs["generation_config"] == {
@@ -498,4 +501,118 @@ def test_gemini_client_duration_exceeded_error_mapping():
 
     assert "duración máxima" in str(exc_info.value)
     assert "30 minutos" in str(exc_info.value)
+
+
+def test_gemini_client_transcribe_audio_extracts_usage():
+    """Verifica que si Interactions API devuelve usage, se extrae tipado correctamente."""
+    from app.services.gemini_client import GeminiClient
+    from app.schemas.audio import AudioTranscriptionUsage
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "Transcripción con usage."
+    mock_interaction.steps = []
+    mock_interaction.detected_language = None
+
+    mock_usage = MagicMock()
+    mock_usage.total_input_tokens = 1245
+    mock_usage.total_output_tokens = 380
+    mock_usage.total_tokens = 1625
+    mock_interaction.usage = mock_usage
+
+    mock_genai_client.interactions.create.return_value = mock_interaction
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "https://example.com/audio"
+    mock_remote_file.mime_type = "audio/wav"
+
+    text, segments, detected_lang, usage = client.transcribe_audio(
+        remote_file=mock_remote_file,
+        mode="verbatim",
+        diarization=False,
+    )
+
+    assert text == "Transcripción con usage."
+    assert isinstance(usage, AudioTranscriptionUsage)
+    assert usage.input_tokens == 1245
+    assert usage.output_tokens == 380
+    assert usage.total_tokens == 1625
+
+
+def test_gemini_client_transcribe_audio_handles_null_usage_without_fallback():
+    """Verifica que si no hay usage oficial, es None y NO hay estimaciones ni fallbacks inventados."""
+    from app.services.gemini_client import GeminiClient
+
+    client = GeminiClient()
+    mock_genai_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "Transcripción sin usage."
+    mock_interaction.steps = []
+    mock_interaction.detected_language = None
+    mock_interaction.usage = None
+
+    mock_genai_client.interactions.create.return_value = mock_interaction
+    client._client = mock_genai_client
+
+    mock_remote_file = MagicMock()
+    mock_remote_file.uri = "https://example.com/audio"
+    mock_remote_file.mime_type = "audio/wav"
+
+    text, segments, detected_lang, usage = client.transcribe_audio(
+        remote_file=mock_remote_file,
+        mode="verbatim",
+        diarization=False,
+    )
+
+    assert text == "Transcripción sin usage."
+    assert usage is None
+
+
+def test_audio_endpoint_includes_usage_when_provided(client: TestClient, mock_gemini):
+    """Verifica que el endpoint /api/v1/audio/transcribe incluye usage en el response cuando el cliente lo suministra."""
+    from app.schemas.audio import AudioTranscriptionUsage
+
+    mock_usage = AudioTranscriptionUsage(input_tokens=850, output_tokens=210, total_tokens=1060)
+    mock_gemini.transcribe_audio.return_value = (
+        "Transcripción con usage de tokens.",
+        [],
+        None,
+        mock_usage,
+    )
+    mp3_bytes = generate_synthetic_mp3()
+    response = client.post(
+        "/api/v1/audio/transcribe",
+        files={"file": ("vista.mp3", mp3_bytes, "audio/mpeg")},
+        params={"mode": "verbatim", "diarization": False},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["usage"] is not None
+    assert data["usage"]["input_tokens"] == 850
+    assert data["usage"]["output_tokens"] == 210
+    assert data["usage"]["total_tokens"] == 1060
+
+
+def test_audio_endpoint_handles_null_usage(client: TestClient, mock_gemini):
+    """Verifica que el endpoint maneja correctamente usage null sin romper el esquema."""
+    mock_gemini.transcribe_audio.return_value = (
+        "Transcripción sin usage.",
+        [],
+        None,
+        None,
+    )
+    mp3_bytes = generate_synthetic_mp3()
+    response = client.post(
+        "/api/v1/audio/transcribe",
+        files={"file": ("vista.mp3", mp3_bytes, "audio/mpeg")},
+        params={"mode": "verbatim", "diarization": False},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["usage"] is None
+
 

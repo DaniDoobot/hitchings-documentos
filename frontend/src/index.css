@@ -742,19 +742,6 @@ body {
   border: 1px solid var(--primary-border);
 }
 
-.result-model-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background-color: #f1f5f9;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.25rem 0.6rem;
-  border-radius: 9999px;
-  border: 1px solid var(--border);
-}
-
 .result-title {
   font-size: 1.45rem;
   font-weight: 700;
@@ -911,6 +898,52 @@ body {
   justify-content: flex-end;
 }
 
+.result-metrics-footer.multi-stage {
+  justify-content: flex-end;
+}
+
+.metrics-multi-stage-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.metrics-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+
+.metrics-stages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-end;
+}
+
+.metrics-stage-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.stage-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.stage-value {
+  color: var(--text-muted);
+}
+
 .metrics-group {
   display: flex;
   align-items: center;
@@ -921,4 +954,14 @@ body {
 
 .metric-separator {
   color: var(--border-hover);
+}
+
+@media (max-width: 640px) {
+  .result-metrics-footer {
+    justify-content: flex-start;
+  }
+  .metrics-multi-stage-container,
+  .metrics-stages-list {
+    align-items: flex-start;
+  }
 }

@@ -687,4 +687,149 @@ describe('HITCHINGS Documentos - Flujos Extremo a Extremo (Bloque 6B)', () => {
     expect(select).toBeInTheDocument();
     expect(screen.getByText('Resumen Ejecutivo')).toBeInTheDocument();
   });
+
+  it('30. El modelo utilizado NO se renderiza en la interfaz (badges, texto visible, metadatos)', async () => {
+    vi.spyOn(textApi, 'prepareText').mockResolvedValue(mockTextResponse);
+    vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisResponse);
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /pegar texto/i }));
+    fireEvent.change(screen.getByPlaceholderText(/Pega o escribe aquí/i), { target: { value: 'Texto de prueba' } });
+    fireEvent.click(screen.getByRole('button', { name: /analizar texto/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Dictamen Jurídico sobre Contrato')).toBeInTheDocument();
+    });
+
+    // Verificar que el modelo no se muestra visualmente en ninguna parte
+    expect(screen.queryByText(/gemini-3\.8-flash/i)).not.toBeInTheDocument();
+    expect(document.querySelector('.result-model-badge')).toBeNull();
+  });
+
+  it('31. Documento y texto muestran tokens de análisis exclusivamente sin mención a modelo', async () => {
+    vi.spyOn(docsApi, 'extractDocument').mockResolvedValue(mockDocResponse);
+    vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisResponse);
+
+    await renderAndAwaitReady();
+
+    const file = new File(['pdf content'], 'contrato.pdf', { type: 'application/pdf' });
+    await userEvent.upload(screen.getByLabelText(/Cargar archivo de documento/i), file);
+    fireEvent.click(screen.getByRole('button', { name: /analizar documento/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Dictamen Jurídico sobre Contrato')).toBeInTheDocument();
+    });
+
+    const footer = document.querySelector('.result-metrics-footer');
+    expect(footer).toBeInTheDocument();
+    expect(footer).not.toHaveClass('multi-stage');
+    expect(footer).toHaveTextContent(/Análisis:/i);
+    expect(footer).toHaveTextContent(/tokens entrada/i);
+    expect(footer).toHaveTextContent(/1540|1\.540|1,540/);
+    expect(footer).toHaveTextContent(/salida/i);
+    expect(footer).toHaveTextContent(/320/);
+    expect(footer).toHaveTextContent(/total/i);
+    expect(footer).toHaveTextContent(/1860|1\.860|1,860/);
+    // No debe contener mención a transcripción ni a modelo
+    expect(footer).not.toHaveTextContent(/Transcripción:/i);
+    expect(footer).not.toHaveTextContent(/gemini/i);
+  });
+
+  it('32. Audio muestra separadamente Transcripción y Análisis cuando la transcripción incluye usage', async () => {
+    const mockAudioWithUsage: AudioTranscribeResponse = {
+      ...mockAudioResponse,
+      usage: {
+        input_tokens: 500,
+        output_tokens: 50,
+        total_tokens: 550,
+      },
+    };
+
+    vi.spyOn(audioApi, 'transcribeAudio').mockResolvedValue(mockAudioWithUsage);
+    vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisResponse);
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
+    const audioFile = new File(['audio content'], 'reunion.mp3', { type: 'audio/mpeg' });
+    await userEvent.upload(screen.getByLabelText(/Cargar archivo de audio/i), audioFile);
+    fireEvent.click(screen.getByRole('button', { name: /transcribir y analizar/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Dictamen Jurídico sobre Contrato')).toBeInTheDocument();
+    });
+
+    const footer = document.querySelector('.result-metrics-footer');
+    expect(footer).toBeInTheDocument();
+    expect(footer).toHaveClass('multi-stage');
+
+    // Título de sección de métricas múltiples
+    expect(footer).toHaveTextContent(/Uso de IA/i);
+
+    // Muestra la línea de transcripción
+    expect(footer).toHaveTextContent(/Transcripción:/i);
+    expect(footer).toHaveTextContent(/500 tokens entrada · 50 salida · 550 total/);
+
+    // Muestra la línea de análisis separada
+    expect(footer).toHaveTextContent(/Análisis:/i);
+    expect(footer).toHaveTextContent(/1540|1\.540|1,540 tokens entrada · 320 salida · 1860|1\.860|1,860 total/);
+
+    // No debe contener mención a modelos
+    expect(footer).not.toHaveTextContent(/gemini-3\.5-transcribe/i);
+    expect(footer).not.toHaveTextContent(/gemini-3\.8-flash/i);
+  });
+
+  it('33. Audio muestra únicamente Análisis si la transcripción no incluye usage (sin bloques vacíos)', async () => {
+    const mockAudioNoUsage: AudioTranscribeResponse = {
+      ...mockAudioResponse,
+      usage: null,
+    };
+
+    vi.spyOn(audioApi, 'transcribeAudio').mockResolvedValue(mockAudioNoUsage);
+    vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisResponse);
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
+    const audioFile = new File(['audio content'], 'reunion.mp3', { type: 'audio/mpeg' });
+    await userEvent.upload(screen.getByLabelText(/Cargar archivo de audio/i), audioFile);
+    fireEvent.click(screen.getByRole('button', { name: /transcribir y analizar/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Dictamen Jurídico sobre Contrato')).toBeInTheDocument();
+    });
+
+    const footer = document.querySelector('.result-metrics-footer');
+    expect(footer).toBeInTheDocument();
+    expect(footer).not.toHaveClass('multi-stage');
+    expect(footer).not.toHaveTextContent(/Transcripción:/i);
+    expect(footer).not.toHaveTextContent(/Uso de IA/i);
+    expect(footer).toHaveTextContent(/Análisis:/i);
+    expect(footer).toHaveTextContent(/1540|1\.540|1,540/);
+  });
+
+  it('34. Si no hay ningún usage disponible, no se renderiza el footer de métricas', async () => {
+    const mockAnalysisNoUsage: AnalysisResponse = {
+      ...mockAnalysisResponse,
+      usage: undefined,
+    };
+
+    vi.spyOn(textApi, 'prepareText').mockResolvedValue(mockTextResponse);
+    vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisNoUsage);
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /pegar texto/i }));
+    fireEvent.change(screen.getByPlaceholderText(/Pega o escribe aquí/i), { target: { value: 'Texto de prueba' } });
+    fireEvent.click(screen.getByRole('button', { name: /analizar texto/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Dictamen Jurídico sobre Contrato')).toBeInTheDocument();
+    });
+
+    const footer = document.querySelector('.result-metrics-footer');
+    expect(footer).toBeNull();
+  });
 });
+

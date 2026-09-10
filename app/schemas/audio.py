@@ -8,6 +8,13 @@ class SpeakerSegment(BaseModel):
     text: str = Field(..., description="Texto emitido por el hablante en este segmento")
 
 
+class AudioTranscriptionUsage(BaseModel):
+    """Métricas de consumo de tokens del proveedor Gemini para la transcripción."""
+    input_tokens: int | None = Field(default=None, ge=0, description="Tokens consumidos en el audio de entrada")
+    output_tokens: int | None = Field(default=None, ge=0, description="Tokens consumidos en la transcripción de salida")
+    total_tokens: int | None = Field(default=None, ge=0, description="Total de tokens consumidos en la transcripción")
+
+
 class AudioTranscribeResponse(BaseModel):
     """Respuesta estructurada para la transcripción de audio."""
     filename: str = Field(..., description="Nombre del archivo original sanitizado")
@@ -35,4 +42,8 @@ class AudioTranscribeResponse(BaseModel):
     warnings: List[str] = Field(
         default_factory=list,
         description="Lista de advertencias sobre el proceso de transcripción",
+    )
+    usage: AudioTranscriptionUsage | None = Field(
+        default=None,
+        description="Desglose del consumo de tokens de la transcripción (si lo devuelve el proveedor)",
     )

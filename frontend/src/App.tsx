@@ -23,6 +23,7 @@ import type {
   ProcessingStage,
   AnalysisResponse,
   AnalysisRequest,
+  AudioTranscriptionUsage,
 } from './types/api';
 import { Sliders, AlertCircle } from 'lucide-react';
 
@@ -38,6 +39,7 @@ interface CachedAudio {
   diarization: boolean;
   text: string;
   warnings: string[];
+  usage?: AudioTranscriptionUsage | null;
 }
 
 export function App() {
@@ -75,6 +77,7 @@ export function App() {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
   const [processingWarnings, setProcessingWarnings] = useState<string[]>([]);
+  const [transcriptionUsage, setTranscriptionUsage] = useState<AudioTranscriptionUsage | null>(null);
 
   // Ref to track current processing stage synchronously for error handling
   const currentStageRef = useRef<ProcessingStage>('idle');
@@ -110,6 +113,7 @@ export function App() {
     setDocumentFile(file);
     setCachedDoc(null);
     setAnalysisResult(null);
+    setTranscriptionUsage(null);
     setGeneralError(null);
   };
 
@@ -118,23 +122,27 @@ export function App() {
     setAudioFile(file);
     setCachedAudio(null);
     setAnalysisResult(null);
+    setTranscriptionUsage(null);
     setGeneralError(null);
   };
 
   const handleAudioModeChange = (mode: TranscriptionMode) => {
     setAudioMode(mode);
     setCachedAudio(null);
+    setTranscriptionUsage(null);
   };
 
   const handleAudioDiarizationChange = (diarization: boolean) => {
     setAudioDiarization(diarization);
     setCachedAudio(null);
+    setTranscriptionUsage(null);
   };
 
   const handleTextChange = (text: string) => {
     setTextContent(text);
     if (analysisResult) {
       setAnalysisResult(null);
+      setTranscriptionUsage(null);
       setGeneralError(null);
     }
   };
@@ -208,6 +216,7 @@ export function App() {
       // Step 1: Input preparation / extraction / transcription
       if (activeTab === 'document') {
         if (!documentFile) return;
+        setTranscriptionUsage(null);
 
         // Check in-memory cache
         if (cachedDoc && cachedDoc.file === documentFile) {
@@ -243,6 +252,7 @@ export function App() {
         ) {
           preparedText = cachedAudio.text;
           currentProcWarnings = cachedAudio.warnings;
+          setTranscriptionUsage(cachedAudio.usage ?? null);
         } else {
           updateStage('transcribing');
           const audioRes = await transcribeAudio(
@@ -259,15 +269,19 @@ export function App() {
           }
           preparedText = audioRes.text;
           currentProcWarnings = audioRes.warnings || [];
+          const audioUsage = audioRes.usage ?? null;
+          setTranscriptionUsage(audioUsage);
           setCachedAudio({
             file: audioFile,
             mode: audioMode,
             diarization: audioDiarization,
             text: audioRes.text,
             warnings: currentProcWarnings,
+            usage: audioUsage,
           });
         }
       } else if (activeTab === 'text') {
+        setTranscriptionUsage(null);
         updateStage('preparing');
         const textRes = await prepareText(textContent);
         preparedText = textRes.text;
@@ -414,6 +428,7 @@ export function App() {
             <AnalysisResult
               analysis={analysisResult}
               processingWarnings={processingWarnings}
+              transcriptionUsage={transcriptionUsage}
             />
           </section>
         )}

@@ -54,7 +54,7 @@ export interface AnalysisResponse {
   title: string;
   content: string;
   warnings: string[];
-  usage: AnalysisUsage;
+  usage?: AnalysisUsage | null;
 }
 
 export interface DocumentExtractResponse {
@@ -74,6 +74,12 @@ export interface SpeakerSegment {
   text: string;
 }
 
+export interface AudioTranscriptionUsage {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+}
+
 export interface AudioTranscribeResponse {
   filename: string;
   extension: string;
@@ -89,6 +95,7 @@ export interface AudioTranscribeResponse {
   language?: string | null;
   segments: SpeakerSegment[];
   warnings: string[];
+  usage?: AudioTranscriptionUsage | null;
 }
 
 export interface TextPrepareRequest {

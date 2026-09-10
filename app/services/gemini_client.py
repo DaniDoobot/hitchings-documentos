@@ -5,7 +5,7 @@ from google.genai.errors import APIError
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.schemas.audio import SpeakerSegment
+from app.schemas.audio import AudioTranscriptionUsage, SpeakerSegment
 
 
 class GeminiConfigurationError(Exception):
@@ -201,7 +201,36 @@ class GeminiClient:
                 if isinstance(meta_lang, str) and meta_lang.strip():
                     detected_language = meta_lang.strip()
 
-        return full_text, segments, detected_language
+        # Extraer usage de la interacción si el proveedor lo suministra oficialmente
+        usage = None
+        usage_data = getattr(interaction, "usage", None)
+        if usage_data is not None:
+            if isinstance(usage_data, dict):
+                in_tok = usage_data.get("total_input_tokens", usage_data.get("input_tokens"))
+                out_tok = usage_data.get("total_output_tokens", usage_data.get("output_tokens"))
+                tot_tok = usage_data.get("total_tokens")
+            else:
+                in_tok = getattr(usage_data, "total_input_tokens", None)
+                if in_tok is None:
+                    in_tok = getattr(usage_data, "input_tokens", None)
+                out_tok = getattr(usage_data, "total_output_tokens", None)
+                if out_tok is None:
+                    out_tok = getattr(usage_data, "output_tokens", None)
+                tot_tok = getattr(usage_data, "total_tokens", None)
+
+            # Validar que los valores sean enteros reales (evita auto-atributos de MagicMock)
+            in_int = in_tok if isinstance(in_tok, int) and not isinstance(in_tok, bool) else None
+            out_int = out_tok if isinstance(out_tok, int) and not isinstance(out_tok, bool) else None
+            tot_int = tot_tok if isinstance(tot_tok, int) and not isinstance(tot_tok, bool) else None
+
+            if in_int is not None or out_int is not None or tot_int is not None:
+                usage = AudioTranscriptionUsage(
+                    input_tokens=in_int,
+                    output_tokens=out_int,
+                    total_tokens=tot_int,
+                )
+
+        return full_text, segments, detected_language, usage
 
 
 gemini_client = GeminiClient()

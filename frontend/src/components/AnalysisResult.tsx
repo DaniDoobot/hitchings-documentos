@@ -4,24 +4,55 @@ import remarkGfm from 'remark-gfm';
 import {
   FileText,
   AlertTriangle,
-  Cpu,
   Hash,
   Copy,
   Check,
   FileDown,
 } from 'lucide-react';
-import type { AnalysisResponse } from '../types/api';
+import type { AnalysisResponse, AudioTranscriptionUsage } from '../types/api';
 import { exportAnalysisToWord, type WordExportRequest } from '../api/export';
 import { ApiError } from '../api/client';
 
 interface AnalysisResultProps {
   analysis: AnalysisResponse;
   processingWarnings?: string[];
+  transcriptionUsage?: AudioTranscriptionUsage | null;
+}
+
+function formatTokenMetrics(usage?: {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+} | null): string | null {
+  if (!usage) return null;
+  const { input_tokens, output_tokens, total_tokens } = usage;
+  const hasIn = input_tokens !== null && input_tokens !== undefined;
+  const hasOut = output_tokens !== null && output_tokens !== undefined;
+  const hasTot = total_tokens !== null && total_tokens !== undefined;
+
+  if (!hasIn && !hasOut && !hasTot) return null;
+
+  if (!hasIn && !hasOut && hasTot) {
+    return `${total_tokens!.toLocaleString()} tokens`;
+  }
+
+  const parts: string[] = [];
+  if (hasIn) {
+    parts.push(`${input_tokens!.toLocaleString()} tokens entrada`);
+  }
+  if (hasOut) {
+    parts.push(`${output_tokens!.toLocaleString()} salida`);
+  }
+  if (hasTot) {
+    parts.push(`${total_tokens!.toLocaleString()} total`);
+  }
+  return parts.join(' · ');
 }
 
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   analysis,
   processingWarnings = [],
+  transcriptionUsage = null,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -31,12 +62,10 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   const analysisWarnings = analysis.warnings || [];
   const hasWarnings = processingWarnings.length > 0 || analysisWarnings.length > 0;
 
-  const usage = analysis.usage;
-  const hasTokens =
-    usage &&
-    (usage.input_tokens !== null ||
-      usage.output_tokens !== null ||
-      usage.total_tokens !== null);
+  const analysisUsageText = formatTokenMetrics(analysis.usage);
+  const transcriptionUsageText = formatTokenMetrics(transcriptionUsage);
+  const hasAnalysisTokens = analysisUsageText !== null;
+  const hasTranscriptionTokens = transcriptionUsageText !== null;
 
   const handleCopy = async () => {
     try {
@@ -121,10 +150,6 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             <span className="result-prompt-badge">
               <FileText size={14} />
               {analysis.prompt_name}
-            </span>
-            <span className="result-model-badge">
-              <Cpu size={14} />
-              {analysis.model}
             </span>
           </div>
 
@@ -216,32 +241,39 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
         )}
 
         {/* Discrete Technical Metrics Footer */}
-        {hasTokens && (
-          <footer className="result-metrics-footer">
-            <div className="metrics-group">
-              <Hash size={13} />
-              {usage.input_tokens !== null && (
-                <span>
-                  <strong>{usage.input_tokens.toLocaleString()}</strong> tokens entrada
-                </span>
-              )}
-              {usage.output_tokens !== null && (
-                <>
-                  <span className="metric-separator">·</span>
-                  <span>
-                    <strong>{usage.output_tokens.toLocaleString()}</strong> salida
-                  </span>
-                </>
-              )}
-              {usage.total_tokens !== null && (
-                <>
-                  <span className="metric-separator">·</span>
-                  <span>
-                    <strong>{usage.total_tokens.toLocaleString()}</strong> total
-                  </span>
-                </>
-              )}
-            </div>
+        {(hasAnalysisTokens || hasTranscriptionTokens) && (
+          <footer
+            className={`result-metrics-footer ${hasTranscriptionTokens ? 'multi-stage' : ''}`}
+            aria-label="Consumo de tokens"
+          >
+            {hasTranscriptionTokens ? (
+              <div className="metrics-multi-stage-container">
+                <div className="metrics-header-row">
+                  <Hash size={13} />
+                  <span className="metrics-main-title">Uso de IA</span>
+                </div>
+                <div className="metrics-stages-list">
+                  {transcriptionUsageText && (
+                    <div className="metrics-stage-item">
+                      <span className="stage-label">Transcripción:</span>
+                      <span className="stage-value">{transcriptionUsageText}</span>
+                    </div>
+                  )}
+                  {analysisUsageText && (
+                    <div className="metrics-stage-item">
+                      <span className="stage-label">Análisis:</span>
+                      <span className="stage-value">{analysisUsageText}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="metrics-group">
+                <Hash size={13} />
+                <span className="stage-label">Análisis:</span>
+                <span className="stage-value">{analysisUsageText}</span>
+              </div>
+            )}
           </footer>
         )}
       </div>
