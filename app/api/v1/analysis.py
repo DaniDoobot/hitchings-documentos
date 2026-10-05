@@ -15,6 +15,7 @@ from app.services.gemini_client import (
     GeminiProviderError,
 )
 from app.services.prompt_service import PromptNotFoundError
+from app.services.prompt_setting_service import BasePromptNotFoundError
 from app.services.text_service import EmptyTextError, TextSizeExceededError
 
 router = APIRouter(prefix="/analysis", tags=["Analysis"])
@@ -38,6 +39,11 @@ async def analyze_document(
     try:
         return analysis_service.analyze_document(request, db=db)
 
+    except BasePromptNotFoundError as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(err),
+        ) from err
     except PromptNotFoundError as err:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

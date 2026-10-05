@@ -41,7 +41,9 @@ def setup_test_database():
     Base.metadata.create_all(bind=test_engine)
     with TestingSessionLocal() as init_session:
         from app.services.analysis_type_service import analysis_type_service
+        from app.services.prompt_setting_service import prompt_setting_service
         analysis_type_service.seed_default_types(init_session)
+        prompt_setting_service.seed_default_settings(init_session)
     yield
     Base.metadata.drop_all(bind=test_engine)
 

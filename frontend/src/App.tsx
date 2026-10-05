@@ -28,9 +28,10 @@ import type {
   AnalysisRequest,
   AudioTranscriptionUsage,
 } from './types/api';
-import { Sliders, AlertCircle, Loader2 } from 'lucide-react';
+import { Sliders, AlertCircle, Loader2, Eye } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Login } from './components/Login';
+import { EffectiveInstructionsModal } from './components/EffectiveInstructionsModal';
 
 interface CachedDocument {
   file: File;
@@ -81,6 +82,7 @@ function AuthenticatedApp() {
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('standard');
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('sections');
   const [additionalInstructions, setAdditionalInstructions] = useState('');
+  const [showInstructionsModal, setShowInstructionsModal] = useState<boolean>(false);
 
   // Execution & Processing states
   const [processingStage, setProcessingStage] = useState<ProcessingStage>('idle');
@@ -431,6 +433,19 @@ function AuthenticatedApp() {
                     onAdditionalInstructionsChange={setAdditionalInstructions}
                   />
 
+                  <div className="instructions-preview-trigger-wrap">
+                    <button
+                      type="button"
+                      className="btn-view-instructions"
+                      onClick={() => setShowInstructionsModal(true)}
+                      disabled={!selectedPromptId || isPromptsLoading}
+                      title="Ver las instrucciones intelectuales que gobernarán este análisis"
+                    >
+                      <Eye size={14} />
+                      <span>Ver instrucciones utilizadas</span>
+                    </button>
+                  </div>
+
                   <AnalyzeButton
                     tab={activeTab}
                     hasContent={hasContent}
@@ -442,6 +457,15 @@ function AuthenticatedApp() {
                 </div>
               </section>
             </div>
+
+            <EffectiveInstructionsModal
+              isOpen={showInstructionsModal}
+              onClose={() => setShowInstructionsModal(false)}
+              selectedPromptId={selectedPromptId}
+              detailLevel={detailLevel}
+              outputFormat={outputFormat}
+              additionalInstructions={additionalInstructions}
+            />
 
             {/* Render Result when available */}
             {analysisResult && (

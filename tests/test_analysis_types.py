@@ -204,9 +204,9 @@ def test_csrf_required_on_post_and_patch_analysis_types(active_session_tokens):
         assert resp_invalid.status_code == 403
 
 
-def test_base_estructural_juridica_content():
+def test_base_estructural_juridica_content(db: Session):
     """Verifica que el prompt del sistema contenga la base estructural jurídica intacta."""
-    system_instruction = analysis_prompt_builder.get_system_instruction()
+    system_instruction = analysis_prompt_builder.get_system_instruction(db=db)
     assert "HITCHINGS & GONZÁLEZ" in system_instruction
     assert "defensa de la competencia (antitrust)" in system_instruction
     assert "Unión Europea" in system_instruction

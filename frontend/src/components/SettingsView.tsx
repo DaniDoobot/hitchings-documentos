@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { FileCode2, Users } from 'lucide-react';
+import { FileCode2, FileText, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BasePromptManagement } from './BasePromptManagement';
 import { AnalysisTypesManagement } from './AnalysisTypesManagement';
 import { UsersManagement } from './UsersManagement';
 
@@ -12,7 +13,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onTypesUpdated }) =>
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'analysis-types' | 'users'>('analysis-types');
+  const [activeTab, setActiveTab] = useState<'analysis-types' | 'base-prompt' | 'users'>('analysis-types');
 
   return (
     <div className="settings-container">
@@ -26,6 +27,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onTypesUpdated }) =>
         >
           <FileCode2 size={16} />
           <span>Tipos de análisis</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'base-prompt'}
+          className={`settings-tab-btn ${activeTab === 'base-prompt' ? 'active' : ''}`}
+          onClick={() => setActiveTab('base-prompt')}
+        >
+          <FileText size={16} />
+          <span>Prompt base</span>
         </button>
 
         {isAdmin && (
@@ -43,6 +55,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onTypesUpdated }) =>
       </div>
 
       <div className="settings-tab-content">
+        {activeTab === 'base-prompt' && (
+          <BasePromptManagement />
+        )}
         {activeTab === 'analysis-types' && (
           <AnalysisTypesManagement onTypesUpdated={onTypesUpdated} />
         )}

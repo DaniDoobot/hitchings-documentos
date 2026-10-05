@@ -750,18 +750,35 @@ HITCHINGS Y GONZALEZ DOCUMENTOS implementa un modelo de autenticación y autoriz
 
 ---
 
-## Tipos de Análisis Dinámicos y Base Estructural Jurídica (Bloque 7C)
+## Tipos de Análisis Dinámicos y Biblioteca de Prompts (Bloques 7C y 7D)
 
-### Base Estructural Jurídica (Inmutable)
+### Flexibilidad Total de Prompts (Bloque 7D)
 
-Todo análisis documental ejecutado en la plataforma opera bajo una capa de directivas inviolables establecidas por **HITCHINGS & GONZÁLEZ**:
+A partir del Bloque 7D, el sistema abandona directivas fijas o hardcodeadas en código Python y pasa a un modelo de **gobernanza dinámica y colaborativa de prompts** gestionado íntegramente desde PostgreSQL:
 
-* **Especialización firme**: Derecho de la Competencia (antitrust), Derecho de la Unión Europea y acciones colectivas de alcance nacional e internacional.
-* **Separación epistémica estricta**: Diferenciación obligatoria entre hechos probados, posiciones de las partes, datos cuantitativos, hipótesis y conclusiones adoptadas.
-* **Inmunidad a prompt injection**: El contenido documental es tratado estrictamente como datos pasivos a analizar, nunca como instrucciones del sistema.
-* **Veracidad absoluta**: Prohibición de inventar hechos, citas, fechas, artículos legales, sentencias o importes económicos no presentes en el documento.
+* **Prompt Base Global Editable (`prompt_settings`)**:
+  El marco deontológico y procesal del despacho reside en la tabla `prompt_settings` (clave `analysis_base_prompt`). Cualquier abogado autenticado (`admin` o `user`) puede consultarlo y modificarlo desde la sección **Configuración → Prompt base**. Los cambios surten efecto de inmediato para todo el despacho.
+* **Sin Fallback Silencioso (`Fail-Fast`)**:
+  El backend no mantiene constantes fijas en Python con directivas jurídicas. Si el registro `analysis_base_prompt` no existiera en la base de datos, el sistema falla de manera explícita e inmediata (HTTP 500) garantizando que la base de datos sea la única fuente de verdad.
+* **Composición por Capas en Tiempo de Ejecución**:
+  El prompt enviado a Gemini Interactions API (`store=False`) se construye dinámicamente mediante:
+  1. `Prompt Base Global` (obtenido de PostgreSQL `prompt_settings`).
+  2. `Prompt del Tipo de Análisis` (obtenido de PostgreSQL `analysis_types`).
+  3. `Modificador de Nivel de Detalle` (`brief`, `standard`, `detailed`).
+  4. `Modificador de Formato de Salida` (`prose`, `sections`, `bullet_points`).
+  5. `Instrucciones Adicionales` del usuario (si las hubo).
+  6. `Contenido Documental` encapsulado como bloque pasivo de datos (con defensa contra inyecciones).
 
-Esta base estructural es configurada como `system_instruction` en la Gemini Interactions API y tiene prioridad inviolable sobre cualquier plantilla de análisis o instrucción adicional del usuario.
+### Transparencia Total de Instrucciones (Sin Cajas Negras)
+
+* **Visor en Pantalla Principal**:
+  Junto a los parámetros de análisis, el botón **"Ver instrucciones utilizadas"** abre un modal interactivo con el desglose exacto de las 5 directivas intelectuales que orientarán a la IA en la ejecución actual.
+* **Modos de Visualización**:
+  Permite alternar entre **Desglose por capas** (las 5 fuentes identificadas con insignias y títulos claros) y **Prompt completo integrado** (el texto consolidado listo para copiar).
+* **Vista Previa en Gestión de Tipos**:
+  Al crear o editar cualquier tipo de análisis en **Configuración → Tipos de análisis**, un panel colapsable muestra en tiempo real cómo queda ensamblado el Prompt Base actual con las instrucciones específicas del tipo.
+* **Garantía de Privacidad en el Visor**:
+  El visor modal expone únicamente las directivas intelectuales y jurídicas; no incluye secretos técnicos, claves de API, esquemas JSON internos ni el texto del documento procesado.
 
 ### Catálogo de Tipos de Análisis
 
@@ -775,29 +792,36 @@ Los tipos de análisis se persisten en la tabla `analysis_types` de PostgreSQL. 
 | `timeline` | Cronología |
 | `custom-analysis` | Análisis personalizado |
 
-### Modelo de Permisos y Gestión de Tipos de Análisis
+### Modelo de Permisos y Gestión de Prompts
 
-* **Cualquier usuario autenticado** (`admin` y `user`) puede listar, crear, editar, activar/desactivar y **eliminar definitivamente** tipos de análisis. El catálogo es compartido por todo el despacho.
-* **Eliminación Física Definitiva**: Cualquier tipo de análisis (incluidos los 5 tipos históricos) puede ser eliminado físicamente de la base de datos previa confirmación en modal destructivo. Si el tipo eliminado estaba seleccionado activamente, la interfaz limpia automáticamente la selección.
-* **Desactivación Temporal**: Los tipos también pueden desactivarse temporalmente (`is_active: false`) sin eliminarlos. Los tipos inactivos son excluidos del selector de análisis y rechazados al solicitar análisis (HTTP 400).
-* El **código identificador** (`code`) de cada tipo se genera automáticamente como slug a partir del nombre y es **inmutable** una vez creado, para preservar referencias de ejecución estables.
-* Los tipos de análisis predefinidos del sistema tienen `created_by_user_id = NULL`.
+* **Cualquier usuario autenticado** (`admin` y `user`) puede:
+  - Ver y editar el **Prompt Base Global**.
+  - Listar, crear, editar, activar/desactivar y **eliminar definitivamente** tipos de análisis en la biblioteca compartida.
+* **Gestión de Cuentas (Admin-Only)**:
+  La sección **Configuración → Usuarios** permanece estrictamente restringida a usuarios con rol `admin`.
+* El **código identificador** (`code`) de cada tipo se genera automáticamente como slug a partir del nombre y es **inmutable** una vez creado.
 
-### API de Tipos de Análisis
+### API de Configuración de Prompts y Tipos
 
 | Método | Ruta | Permisos | Descripción |
 |---|---|---|---|
+| `GET` | `/api/v1/prompt-settings/base` | Autenticado | Obtiene el Prompt Base global vigente |
+| `PATCH` | `/api/v1/prompt-settings/base` | Autenticado + CSRF | Actualiza el Prompt Base global (10-30.000 caracteres) |
+| `GET` | `/api/v1/prompt-settings/guidelines` | Autenticado | Directivas de modificadores de nivel de detalle y formato |
+| `POST` | `/api/v1/prompt-settings/preview-instructions` | Autenticado | Composición desglosada y completa de instrucciones efectivas |
 | `GET` | `/api/v1/analysis-types` | Autenticado | Lista todos los tipos (activos e inactivos) |
 | `GET` | `/api/v1/analysis-types/{id}` | Autenticado | Detalle de un tipo por UUID |
-| `POST` | `/api/v1/analysis-types` | Autenticado + CSRF | Crea un nuevo tipo (código generado automáticamente) |
-| `PATCH` | `/api/v1/analysis-types/{id}` | Autenticado + CSRF | Edita nombre, descripción, instrucciones o estado activo |
+| `POST` | `/api/v1/analysis-types` | Autenticado + CSRF | Crea un nuevo tipo de análisis |
+| `PATCH` | `/api/v1/analysis-types/{id}` | Autenticado + CSRF | Edita instrucciones, nombre, descripción o estado activo |
 | `DELETE` | `/api/v1/analysis-types/{id}` | Autenticado + CSRF | Elimina físicamente el tipo de análisis (204 No Content) |
 
-### Migración de Base de Datos
+### Migraciones de Base de Datos
 
-La migración `0002_analysis_types` (down_revision: `0001_initial_auth`) crea la tabla `analysis_types` con índice único en `code` y claves foráneas `SET NULL` hacia `users.id`, y siembra los 5 tipos históricos.
+* **`0001_initial_auth_tables`**: Creación de tablas `users` y `sessions`.
+* **`0002_analysis_types`**: Creación de tabla `analysis_types` y siembra de los 5 tipos históricos.
+* **`0003_prompt_settings`**: Creación de tabla `prompt_settings` y siembra inicial del `analysis_base_prompt`.
 
 ```bash
-# Aplicar migración en producción
+# Aplicar todas las migraciones en producción
 alembic upgrade head
 ```

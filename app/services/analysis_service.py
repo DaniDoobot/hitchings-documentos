@@ -122,7 +122,13 @@ class DocumentAnalysisService:
 
 
         # 2. Construcción desacoplada de System Instruction e Input
-        system_instruction = analysis_prompt_builder.get_system_instruction()
+        if db is not None:
+            system_instruction = analysis_prompt_builder.get_system_instruction(db=db)
+        else:
+            from app.db.session import SessionLocal
+            with SessionLocal() as fallback_db:
+                system_instruction = analysis_prompt_builder.get_system_instruction(db=fallback_db)
+
         user_input = analysis_prompt_builder.build_user_input(
             prompt=prompt,
             options=request.options,

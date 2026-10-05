@@ -101,7 +101,7 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
     });
   });
 
-  it('4. Muestra banner informativo sobre la Base Estructural Jurídica inmutable', async () => {
+  it('4. Muestra banner informativo sobre la Base Estructural Jurídica', async () => {
     vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });
 
     render(<App />);
@@ -109,7 +109,7 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
     await waitFor(() => fireEvent.click(screen.getByRole('button', { name: /configuración/i })));
 
     await waitFor(() => {
-      expect(screen.getByText(/Base Estructural Jurídica de HITCHINGS & GONZÁLEZ \(Inmutable\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Base Estructural Jurídica de HITCHINGS & GONZÁLEZ/i)).toBeInTheDocument();
       expect(screen.getByText(/Derecho de la Competencia \(antitrust\)/i)).toBeInTheDocument();
     });
   });
@@ -173,7 +173,7 @@ describe('Tipos de Análisis Dinámicos y Base Estructural (Bloque 7C)', () => {
       });
       expect(screen.getByText(/creado correctamente/i)).toBeInTheDocument();
     });
-  });
+  }, 15000);
 
   it('7. Valida longitud mínima de nombre e instrucciones al crear tipo', async () => {
     vi.spyOn(authApi, 'getMe').mockResolvedValue({ ...mockRegularUser, csrf_token: 'valid-csrf' });

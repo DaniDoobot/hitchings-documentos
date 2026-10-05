@@ -13,9 +13,13 @@ import {
   Power,
   Trash2,
   AlertTriangle,
+  Eye,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import * as analysisTypesApi from '../api/analysisTypes';
+import * as promptSettingsApi from '../api/promptSettings';
 import { ApiError } from '../api/client';
 import type { AnalysisType } from '../types/analysisTypes';
 
@@ -28,24 +32,33 @@ export const AnalysisTypesManagement: React.FC<AnalysisTypesManagementProps> = (
 }) => {
   const { logout } = useAuth();
   const [types, setTypes] = useState<AnalysisType[]>([]);
+  const [basePrompt, setBasePrompt] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [editingType, setEditingType] = useState<AnalysisType | null>(null);
   const [deletingType, setDeletingType] = useState<AnalysisType | null>(null);
+
+  // Formulario creación
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [createInstructions, setCreateInstructions] = useState('');
   const [createIsActive, setCreateIsActive] = useState<boolean>(true);
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showPreviewCreate, setShowPreviewCreate] = useState(false);
+
+  // Formulario edición
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [editIsActive, setEditIsActive] = useState<boolean>(true);
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [showPreviewEdit, setShowPreviewEdit] = useState(false);
+
+  // Eliminación
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteSubmittedRef = useRef(false);
@@ -54,97 +67,179 @@ export const AnalysisTypesManagement: React.FC<AnalysisTypesManagementProps> = (
     setIsLoading(true);
     setError(null);
     try {
-      const data = await analysisTypesApi.listAnalysisTypes(true);
-      setTypes(data.items);
+      const [typesData, basePromptData] = await Promise.all([
+        analysisTypesApi.listAnalysisTypes(true),
+        promptSettingsApi.getBasePrompt().catch(() => null),
+      ]);
+      setTypes(typesData.items);
+      if (basePromptData) {
+        setBasePrompt(basePromptData.content);
+      }
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) { await logout(); return; }
+      if (err instanceof ApiError && err.status === 401) {
+        await logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Error al cargar los tipos de análisis');
     } finally {
       setIsLoading(false);
     }
   }, [logout]);
 
-  useEffect(() => { loadTypes(); }, [loadTypes]);
+  useEffect(() => {
+    loadTypes();
+  }, [loadTypes]);
 
   const handleOpenCreateModal = () => {
-    setCreateName(''); setCreateDescription(''); setCreateInstructions('');
-    setCreateIsActive(true); setCreateError(null); setShowCreateModal(true);
+    setCreateName('');
+    setCreateDescription('');
+    setCreateInstructions('');
+    setCreateIsActive(true);
+    setCreateError(null);
+    setShowPreviewCreate(false);
+    setShowCreateModal(true);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setCreateError(null);
+    e.preventDefault();
+    setCreateError(null);
+
     const nameTrim = createName.trim();
-    if (nameTrim.length < 2 || nameTrim.length > 150) { setCreateError('El nombre debe tener entre 2 y 150 caracteres.'); return; }
+    if (nameTrim.length < 2 || nameTrim.length > 150) {
+      setCreateError('El nombre debe tener entre 2 y 150 caracteres.');
+      return;
+    }
     const instTrim = createInstructions.trim();
-    if (instTrim.length < 10) { setCreateError('Las instrucciones deben tener al menos 10 caracteres.'); return; }
+    if (instTrim.length < 10) {
+      setCreateError('Las instrucciones deben tener al menos 10 caracteres.');
+      return;
+    }
+
     setIsCreating(true);
     try {
-      await analysisTypesApi.createAnalysisType({ name: nameTrim, description: createDescription.trim(), instructions: instTrim, is_active: createIsActive });
+      await analysisTypesApi.createAnalysisType({
+        name: nameTrim,
+        description: createDescription.trim(),
+        instructions: instTrim,
+        is_active: createIsActive,
+      });
       setSuccessMsg('Tipo de análisis creado correctamente.');
-      setShowCreateModal(false); await loadTypes(); if (onTypesUpdated) onTypesUpdated();
+      setShowCreateModal(false);
+      await loadTypes();
+      if (onTypesUpdated) onTypesUpdated();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) { await logout(); return; }
+      if (err instanceof ApiError && err.status === 401) {
+        await logout();
+        return;
+      }
       setCreateError(err instanceof Error ? err.message : 'Error al crear el tipo de análisis');
-    } finally { setIsCreating(false); }
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleOpenEditModal = (item: AnalysisType) => {
-    setEditingType(item); setEditName(item.name); setEditDescription(item.description);
-    setEditInstructions(item.instructions); setEditIsActive(item.is_active); setEditError(null);
+    setEditingType(item);
+    setEditName(item.name);
+    setEditDescription(item.description);
+    setEditInstructions(item.instructions);
+    setEditIsActive(item.is_active);
+    setEditError(null);
+    setShowPreviewEdit(false);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!editingType) return; setEditError(null);
+    e.preventDefault();
+    if (!editingType) return;
+    setEditError(null);
+
     const nameTrim = editName.trim();
-    if (nameTrim.length < 2 || nameTrim.length > 150) { setEditError('El nombre debe tener entre 2 y 150 caracteres.'); return; }
+    if (nameTrim.length < 2 || nameTrim.length > 150) {
+      setEditError('El nombre debe tener entre 2 y 150 caracteres.');
+      return;
+    }
     const instTrim = editInstructions.trim();
-    if (instTrim.length < 10) { setEditError('Las instrucciones deben tener al menos 10 caracteres.'); return; }
+    if (instTrim.length < 10) {
+      setEditError('Las instrucciones deben tener al menos 10 caracteres.');
+      return;
+    }
+
     setIsEditing(true);
     try {
-      await analysisTypesApi.updateAnalysisType(editingType.id, { name: nameTrim, description: editDescription.trim(), instructions: instTrim, is_active: editIsActive });
+      await analysisTypesApi.updateAnalysisType(editingType.id, {
+        name: nameTrim,
+        description: editDescription.trim(),
+        instructions: instTrim,
+        is_active: editIsActive,
+      });
       setSuccessMsg('Tipo de análisis actualizado correctamente.');
-      setEditingType(null); await loadTypes(); if (onTypesUpdated) onTypesUpdated();
+      setEditingType(null);
+      await loadTypes();
+      if (onTypesUpdated) onTypesUpdated();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) { await logout(); return; }
+      if (err instanceof ApiError && err.status === 401) {
+        await logout();
+        return;
+      }
       setEditError(err instanceof Error ? err.message : 'Error al actualizar el tipo de análisis');
-    } finally { setIsEditing(false); }
+    } finally {
+      setIsEditing(false);
+    }
   };
 
   const handleToggleActive = async (item: AnalysisType) => {
-    const newState = !item.is_active;
+    setError(null);
     try {
-      await analysisTypesApi.updateAnalysisType(item.id, { is_active: newState });
-      setSuccessMsg(`Tipo «${item.name}» ${newState ? 'activado' : 'desactivado'} correctamente.`);
-      await loadTypes(); if (onTypesUpdated) onTypesUpdated();
+      await analysisTypesApi.updateAnalysisType(item.id, {
+        is_active: !item.is_active,
+      });
+      setSuccessMsg(
+        `Tipo "${item.name}" ${!item.is_active ? 'activado' : 'desactivado'} correctamente.`
+      );
+      await loadTypes();
+      if (onTypesUpdated) onTypesUpdated();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) { await logout(); return; }
+      if (err instanceof ApiError && err.status === 401) {
+        await logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Error al cambiar el estado');
     }
   };
 
   const handleOpenDeleteModal = (item: AnalysisType) => {
-    setDeletingType(item); setDeleteError(null); deleteSubmittedRef.current = false;
+    deleteSubmittedRef.current = false;
+    setDeletingType(item);
+    setDeleteError(null);
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingType || isDeleting || deleteSubmittedRef.current) return;
-    deleteSubmittedRef.current = true; setDeleteError(null); setIsDeleting(true);
+    if (!deletingType || deleteSubmittedRef.current) return;
+    deleteSubmittedRef.current = true;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       await analysisTypesApi.deleteAnalysisType(deletingType.id);
+      setSuccessMsg(`Tipo "${deletingType.name}" eliminado definitivamente.`);
       setDeletingType(null);
-      setSuccessMsg('Tipo de análisis eliminado definitivamente.');
-      await loadTypes(); if (onTypesUpdated) onTypesUpdated();
+      await loadTypes();
+      if (onTypesUpdated) onTypesUpdated();
     } catch (err) {
       deleteSubmittedRef.current = false;
       if (err instanceof ApiError) {
         if (err.status === 401) { await logout(); return; }
         if (err.status === 404) {
-          setDeletingType(null); setSuccessMsg('El tipo ya no existía. Listado actualizado.');
-          await loadTypes(); if (onTypesUpdated) onTypesUpdated(); return;
+          setDeletingType(null);
+          setSuccessMsg('El tipo ya no existía. Listado actualizado.');
+          await loadTypes();
+          if (onTypesUpdated) onTypesUpdated();
+          return;
         }
       }
       setDeleteError(err instanceof Error ? err.message : 'Error al eliminar. Inténtalo de nuevo.');
-    } finally { setIsDeleting(false); }
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -153,11 +248,12 @@ export const AnalysisTypesManagement: React.FC<AnalysisTypesManagementProps> = (
         <div className="structural-banner-content">
           <ShieldCheck size={20} className="structural-banner-icon" />
           <div>
-            <h4 className="structural-banner-title">Base Estructural Jurídica de HITCHINGS &amp; GONZÁLEZ (Inmutable)</h4>
+            <h4 className="structural-banner-title">Base Estructural Jurídica de HITCHINGS &amp; GONZÁLEZ</h4>
             <p className="structural-banner-text">
               Todo tipo de análisis se ejecuta integrado con las directivas procesales y deontológicas de máxima prioridad del despacho:
               rigor probatorio, especialización en Derecho de la Competencia (antitrust), Derecho de la Unión Europea y acciones colectivas,
               estricta separación epistémica de hechos y alegaciones, e inmunidad absoluta ante inyección de instrucciones en los documentos.
+              Puedes editar este contexto global para todo el despacho en la pestaña <strong>Prompt base</strong>.
             </p>
           </div>
         </div>
@@ -266,11 +362,49 @@ export const AnalysisTypesManagement: React.FC<AnalysisTypesManagementProps> = (
                   <input id="create-type-description" type="text" className="custom-input" value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Finalidad y alcance de este análisis" maxLength={1000} />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="create-type-instructions" className="field-label">Instrucciones especializadas del modelo <span className="required-star">*</span></label>
-                  <textarea id="create-type-instructions" className="custom-textarea form-textarea-large" rows={8} value={createInstructions} onChange={(e) => setCreateInstructions(e.target.value)} placeholder="Define las pautas específicas de este tipo de análisis..." required />
-                  <span className="field-help">Mínimo 10 caracteres. Todos los análisis se ejecutan sobre la base jurídica del despacho, aplicada automáticamente.</span>
+                  <label htmlFor="create-type-instructions" className="field-label" aria-label="Prompt del tipo de análisis / Instrucciones especializadas del modelo">
+                    Prompt del tipo de análisis (Instrucciones especializadas) <span className="required-star">*</span>
+                  </label>
+                  <textarea id="create-type-instructions" className="custom-textarea form-textarea-large" rows={7} value={createInstructions} onChange={(e) => setCreateInstructions(e.target.value)} placeholder="Define las pautas específicas de este tipo de análisis..." required />
+                  <span className="field-help">Mínimo 10 caracteres. Define el prompt sustantivo que orienta este análisis temático.</span>
                 </div>
-                <div className="form-field">
+
+                {/* Vista previa del prompt completo */}
+                <div className="prompt-preview-collapsible-wrapper">
+                  <button
+                    type="button"
+                    className="btn-toggle-preview"
+                    onClick={() => setShowPreviewCreate(!showPreviewCreate)}
+                  >
+                    <Eye size={14} />
+                    <span>{showPreviewCreate ? 'Ocultar vista previa del prompt completo' : 'Vista previa del prompt completo'}</span>
+                    {showPreviewCreate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+
+                  {showPreviewCreate && (
+                    <div className="prompt-full-preview-box">
+                      <div className="preview-pane">
+                        <div className="preview-pane-header">
+                          <span className="preview-order-badge">1</span>
+                          <strong>PROMPT BASE GLOBAL</strong>
+                          <span className="preview-subtext">(Contexto general del despacho)</span>
+                        </div>
+                        <pre className="preview-pre">{basePrompt || '(Cargando prompt base...)'}</pre>
+                      </div>
+
+                      <div className="preview-pane" style={{ marginTop: '0.75rem' }}>
+                        <div className="preview-pane-header">
+                          <span className="preview-order-badge">2</span>
+                          <strong>PROMPT DEL TIPO: {createName.toUpperCase() || 'NUEVO TIPO'}</strong>
+                          <span className="preview-subtext">(Instrucciones especializadas)</span>
+                        </div>
+                        <pre className="preview-pre">{createInstructions || '(Escribe las instrucciones arriba para visualizarlas aquí)'}</pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-field" style={{ marginTop: '1rem' }}>
                   <label className="checkbox-label">
                     <input type="checkbox" checked={createIsActive} onChange={(e) => setCreateIsActive(e.target.checked)} />
                     <span>Activo (disponible inmediatamente en el selector de análisis)</span>
@@ -317,11 +451,49 @@ export const AnalysisTypesManagement: React.FC<AnalysisTypesManagementProps> = (
                   <input id="edit-type-description" type="text" className="custom-input" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} maxLength={1000} />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="edit-type-instructions" className="field-label">Instrucciones especializadas <span className="required-star">*</span></label>
-                  <textarea id="edit-type-instructions" className="custom-textarea form-textarea-large" rows={8} value={editInstructions} onChange={(e) => setEditInstructions(e.target.value)} required />
-                  <span className="field-help">Todos los análisis se ejecutan sobre la base jurídica del despacho, aplicada automáticamente.</span>
+                  <label htmlFor="edit-type-instructions" className="field-label" aria-label="Prompt del tipo de análisis / Instrucciones especializadas del modelo">
+                    Prompt del tipo de análisis (Instrucciones especializadas) <span className="required-star">*</span>
+                  </label>
+                  <textarea id="edit-type-instructions" className="custom-textarea form-textarea-large" rows={7} value={editInstructions} onChange={(e) => setEditInstructions(e.target.value)} required />
+                  <span className="field-help">Define el prompt sustantivo que orienta este análisis temático.</span>
                 </div>
-                <div className="form-field">
+
+                {/* Vista previa del prompt completo */}
+                <div className="prompt-preview-collapsible-wrapper">
+                  <button
+                    type="button"
+                    className="btn-toggle-preview"
+                    onClick={() => setShowPreviewEdit(!showPreviewEdit)}
+                  >
+                    <Eye size={14} />
+                    <span>{showPreviewEdit ? 'Ocultar vista previa del prompt completo' : 'Vista previa del prompt completo'}</span>
+                    {showPreviewEdit ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+
+                  {showPreviewEdit && (
+                    <div className="prompt-full-preview-box">
+                      <div className="preview-pane">
+                        <div className="preview-pane-header">
+                          <span className="preview-order-badge">1</span>
+                          <strong>PROMPT BASE GLOBAL</strong>
+                          <span className="preview-subtext">(Contexto general del despacho)</span>
+                        </div>
+                        <pre className="preview-pre">{basePrompt || '(Cargando prompt base...)'}</pre>
+                      </div>
+
+                      <div className="preview-pane" style={{ marginTop: '0.75rem' }}>
+                        <div className="preview-pane-header">
+                          <span className="preview-order-badge">2</span>
+                          <strong>PROMPT DEL TIPO: {editName.toUpperCase() || 'TIPO'}</strong>
+                          <span className="preview-subtext">(Instrucciones especializadas)</span>
+                        </div>
+                        <pre className="preview-pre">{editInstructions || '(Sin instrucciones)'}</pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-field" style={{ marginTop: '1rem' }}>
                   <label className="checkbox-label">
                     <input type="checkbox" checked={editIsActive} onChange={(e) => setEditIsActive(e.target.checked)} />
                     <span>Activo (disponible en el selector de análisis)</span>

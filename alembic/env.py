@@ -32,7 +32,7 @@ def get_database_url() -> str:
     Obtiene la DATABASE_URL desde la configuración unificada de la aplicación (settings).
     Ignora cualquier valor o placeholder de alembic.ini y falla de forma temprana si no es válida.
     """
-    url = getattr(settings, "DATABASE_URL", "")
+    url = os.environ.get("DATABASE_URL") or getattr(settings, "DATABASE_URL", "")
     if not url or not str(url).strip() or str(url).strip().startswith("driver://"):
         raise ValueError(
             "DATABASE_URL no está configurada o contiene un placeholder inválido ('driver://'). "

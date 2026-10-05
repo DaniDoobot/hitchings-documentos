@@ -8,6 +8,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.export import router as export_router
 from app.api.v1.prompts import router as prompts_router
+from app.api.v1.prompt_settings import router as prompt_settings_router
 from app.api.v1.text import router as text_router
 from app.schemas.health import HealthResponse
 
@@ -24,6 +25,7 @@ router.include_router(audio_router, prefix="/api/v1", dependencies=auth_dependen
 router.include_router(text_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(prompts_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(analysis_types_router, prefix="/api/v1", dependencies=auth_dependencies)
+router.include_router(prompt_settings_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(analysis_router, prefix="/api/v1", dependencies=auth_dependencies)
 router.include_router(export_router, prefix="/api/v1", dependencies=auth_dependencies)
 

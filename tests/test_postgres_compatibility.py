@@ -3,6 +3,7 @@ from sqlalchemy.schema import CreateTable
 from app.models.user import User
 from app.models.session import Session
 from app.models.analysis_type import AnalysisType
+from app.models.prompt_setting import PromptSetting
 from app.db.base import Base
 
 
@@ -75,10 +76,32 @@ def test_postgresql_ddl_analysis_types_compilation():
     assert "PRIMARY KEY (id)" in ddl
 
 
+def test_postgresql_ddl_prompt_settings_compilation():
+    """
+    Verifica que el modelo PromptSetting genera DDL 100% válido y compatible con PostgreSQL 16:
+    - UUID nativo para id y updated_by_user_id
+    - VARCHAR(100) único para key
+    - TEXT para content
+    - TIMESTAMP WITH TIME ZONE para created_at y updated_at
+    - Clave foránea con ON DELETE SET NULL hacia users.id
+    """
+    ddl = str(CreateTable(PromptSetting.__table__).compile(dialect=postgresql.dialect()))
+    assert "CREATE TABLE prompt_settings" in ddl
+    assert "id UUID NOT NULL" in ddl
+    assert "key VARCHAR(100) NOT NULL" in ddl
+    assert "content TEXT NOT NULL" in ddl
+    assert "updated_by_user_id UUID" in ddl
+    assert "created_at TIMESTAMP WITH TIME ZONE NOT NULL" in ddl
+    assert "updated_at TIMESTAMP WITH TIME ZONE NOT NULL" in ddl
+    assert "FOREIGN KEY(updated_by_user_id) REFERENCES users (id) ON DELETE SET NULL" in ddl
+    assert "PRIMARY KEY (id)" in ddl
+
+
 def test_metadata_tables_coverage():
     """Verifica que todos los modelos del sistema están registrados en Base.metadata."""
     table_names = set(Base.metadata.tables.keys())
     assert "users" in table_names
     assert "sessions" in table_names
     assert "analysis_types" in table_names
+    assert "prompt_settings" in table_names
 
