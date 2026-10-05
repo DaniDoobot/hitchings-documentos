@@ -75,7 +75,7 @@ const mockEffectiveInstructions: EffectiveInstructionsResponse = {
 
 const mockGuidelines: PromptOptionsGuidelines = {
   detail_levels: {
-    concise: 'Sé conciso.',
+    brief: 'Breve y conciso.',
     standard: 'Proporciona un análisis equilibrado con nivel de detalle estándar.',
     detailed: 'Sé exhaustivo.',
   },
