@@ -15,6 +15,7 @@ from app.services.gemini_client import (
     GeminiProviderError,
     gemini_client,
 )
+from app.services.media_service import media_service
 from app.utils.text import calculate_text_metrics, normalize_text
 
 CHUNK_SIZE = 64 * 1024  # 64 KB por fragmento
@@ -26,7 +27,7 @@ class UnsupportedAudioFormatError(Exception):
     def __init__(self, extension: str):
         self.extension = extension
         super().__init__(
-            f"Formato de audio no permitido: '.{extension}'. Formatos soportados: mp3, wav, m4a, aac, ogg, flac, webm."
+            f"Formato de audio no permitido: '.{extension}'. Formatos soportados: mp3, wav, m4a, aac, ogg, flac, webm, mp4."
         )
 
 
@@ -74,6 +75,7 @@ class AudioTranscriptionService:
         "ogg",
         "flac",
         "webm",
+        "mp4",
     }
 
     AUDIO_MIME_MAPPING: Dict[str, str] = {
@@ -84,6 +86,7 @@ class AudioTranscriptionService:
         "ogg": "audio/ogg",
         "flac": "audio/flac",
         "webm": "audio/webm",
+        "mp4": "video/mp4",
     }
 
     def __init__(self, client: GeminiClient | None = None):
@@ -107,7 +110,7 @@ class AudioTranscriptionService:
         return ""
 
     def validate_audio_header(self, initial_bytes: bytes, extension: str) -> None:
-        """Comprobación básica de firmas de cabecera de audio para evitar archivos falsos."""
+        """Comprobación básica de firmas de cabecera de audio/vídeo para evitar archivos falsos."""
         if len(initial_bytes) < 4:
             raise CorruptedAudioFileError("El archivo de audio es demasiado pequeño o está corrupto.")
 
@@ -119,8 +122,8 @@ class AudioTranscriptionService:
             raise CorruptedAudioFileError("El archivo no es un documento OGG válido (firma OggS no encontrada).")
         elif extension == "webm" and not initial_bytes.startswith(b"\x1a\x45\xdf\xa3"):
             raise CorruptedAudioFileError("El archivo no es un documento WebM válido (firma EBML no encontrada).")
-        elif extension == "m4a" and b"ftyp" not in initial_bytes[:16]:
-            raise CorruptedAudioFileError("El archivo no es un documento M4A válido (firma ftyp no encontrada).")
+        elif extension in ("m4a", "mp4") and b"ftyp" not in initial_bytes[:16]:
+            raise CorruptedAudioFileError(f"El archivo no es un documento {extension.upper()} válido (firma ftyp no encontrada).")
 
     async def save_stream_to_temp_file(
         self, file: UploadFile, extension: str, max_bytes: int
@@ -202,16 +205,34 @@ class AudioTranscriptionService:
             max_bytes=settings.max_audio_size_bytes,
         )
 
+        extracted_audio_path = None
         remote_file = None
         remote_file_name = None
         warnings: list[str] = []
 
         try:
-            # 4. Subida a Gemini Files API
-            remote_file = self.client.upload_file(temp_path, mime_type=mime_type)
+            if extension == "mp4":
+                # 4. Inspección del contenedor MP4 con ffprobe
+                media_info = media_service.inspect_media(temp_path)
+                media_service.validate_duration(media_info.duration_seconds, diarization=diarization)
+
+                # 5. Extracción y normalización de pista de audio a FLAC con ffmpeg
+                flac_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".flac")
+                flac_temp.close()
+                extracted_audio_path = flac_temp.name
+
+                media_service.extract_audio(temp_path, extracted_audio_path)
+                upload_path = extracted_audio_path
+                upload_mime = "audio/flac"
+            else:
+                upload_path = temp_path
+                upload_mime = mime_type
+
+            # 6. Subida a Gemini Files API
+            remote_file = self.client.upload_file(upload_path, mime_type=upload_mime)
             remote_file_name = getattr(remote_file, "name", None)
 
-            # 5. Transcripción con Gemini Interactions API
+            # 7. Transcripción con Gemini Interactions API
             transcribe_result = self.client.transcribe_audio(
                 remote_file=remote_file,
                 mode=mode,
@@ -224,13 +245,13 @@ class AudioTranscriptionService:
                 raw_text, segments, detected_language = transcribe_result
                 usage = None
 
-            # 6. Normalización conservadora de texto (respetando verbatim)
+            # 8. Normalización conservadora de texto (respetando verbatim)
             normalized_text = normalize_text(raw_text)
             word_count, character_count = calculate_text_metrics(normalized_text)
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-            # 7. Log técnico seguro (cero nombres de archivo, cero texto, cero PII)
+            # 9. Log técnico seguro (cero nombres de archivo, cero texto, cero PII)
             in_tok_str = str(usage.input_tokens) if usage and usage.input_tokens is not None else "n/a"
             out_tok_str = str(usage.output_tokens) if usage and usage.output_tokens is not None else "n/a"
             tot_tok_str = str(usage.total_tokens) if usage and usage.total_tokens is not None else "n/a"
@@ -268,11 +289,15 @@ class AudioTranscriptionService:
                 usage=usage,
             )
         finally:
-            # 8. Borrado remoto OBLIGATORIO de Gemini Files API (éxito o error)
+            # 10. Borrado remoto OBLIGATORIO de Gemini Files API (éxito o error)
             if remote_file_name:
                 self.client.delete_remote_file(remote_file_name)
 
-            # 9. Borrado local OBLIGATORIO del archivo temporal
+            # 11. Borrado local OBLIGATORIO del audio extraído (si se generó)
+            if extracted_audio_path:
+                Path(extracted_audio_path).unlink(missing_ok=True)
+
+            # 12. Borrado local OBLIGATORIO del archivo temporal original
             if temp_path:
                 Path(temp_path).unlink(missing_ok=True)
 

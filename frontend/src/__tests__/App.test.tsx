@@ -371,4 +371,67 @@ describe('HITCHINGS Documentos - Frontend Base (Bloque 6A)', () => {
       screen.getByDisplayValue('Texto que no debe perderse.')
     ).toBeInTheDocument();
   });
+
+  it('20. Pestaña muestra Audio / Vídeo, acepta archivo .mp4 y renderiza reproductor de vídeo', async () => {
+    await renderAppReady();
+
+    const audioTab = screen.getByRole('tab', { name: /audio \/ vídeo/i });
+    expect(audioTab).toBeInTheDocument();
+    fireEvent.click(audioTab);
+
+    expect(screen.getByText(/MP4/i)).toBeInTheDocument();
+
+    const mp4File = new File(['fake mp4 content'], 'audiencia.mp4', {
+      type: 'video/mp4',
+    });
+    const input = screen.getByLabelText(/Cargar archivo de audio o vídeo/i);
+    await userEvent.upload(input, mp4File);
+
+    // Debe mostrar la previsualización del reproductor <video>
+    const videoElement = screen.getByLabelText(/Previsualización de vídeo/i);
+    expect(videoElement).toBeInTheDocument();
+    expect(videoElement.tagName.toLowerCase()).toBe('video');
+    expect(screen.getByText('audiencia.mp4')).toBeInTheDocument();
+  });
+
+  it('21. Carga de MP4 invoca URL.createObjectURL y eliminación invoca URL.revokeObjectURL', async () => {
+    const createUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:http://localhost/test-video');
+    const revokeUrlSpy = vi.spyOn(URL, 'revokeObjectURL');
+
+    await renderAppReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
+    const mp4File = new File(['fake mp4'], 'declaracion.mp4', { type: 'video/mp4' });
+    const input = screen.getByLabelText(/Cargar archivo de audio/i);
+    await userEvent.upload(input, mp4File);
+
+    expect(createUrlSpy).toHaveBeenCalledWith(mp4File);
+
+    const videoElement = screen.getByLabelText(/Previsualización de vídeo/i);
+    expect(videoElement).toHaveAttribute('src', 'blob:http://localhost/test-video');
+
+    // Eliminar vídeo seleccionado
+    const removeBtn = screen.getByLabelText(/Eliminar vídeo seleccionado/i);
+    fireEvent.click(removeBtn);
+
+    expect(revokeUrlSpy).toHaveBeenCalledWith('blob:http://localhost/test-video');
+    expect(screen.queryByLabelText(/Previsualización de vídeo/i)).not.toBeInTheDocument();
+  });
+
+  it('22. Muestra mensaje de error cuando un archivo MP4 supera los 200 MB', async () => {
+    await renderAppReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
+    const hugeMp4 = new File(['video'], 'grabacion_larga.mp4', { type: 'video/mp4' });
+    Object.defineProperty(hugeMp4, 'size', { value: 205 * 1024 * 1024 });
+
+    const input = screen.getByLabelText(/Cargar archivo de audio/i);
+    fireEvent.change(input, { target: { files: [hugeMp4] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/supera el tamaño máximo permitido de 200 MB/i)
+      ).toBeInTheDocument();
+    });
+  });
 });

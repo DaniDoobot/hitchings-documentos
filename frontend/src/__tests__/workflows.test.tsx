@@ -831,5 +831,62 @@ describe('HITCHINGS Documentos - Flujos Extremo a Extremo (Bloque 6B)', () => {
     const footer = document.querySelector('.result-metrics-footer');
     expect(footer).toBeNull();
   });
+
+  it('35. MP4 válido llama a transcribeAudio y ejecuta pipeline completo de análisis', async () => {
+    const mockMp4Transcription: AudioTranscribeResponse = {
+      ...mockAudioResponse,
+      filename: 'grabacion_vista.mp4',
+      extension: 'mp4',
+      content_type: 'video/mp4',
+      text: 'Texto extraído de la grabación judicial MP4.',
+    };
+
+    const audioSpy = vi.spyOn(audioApi, 'transcribeAudio').mockResolvedValue(mockMp4Transcription);
+    const analysisSpy = vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisResponse);
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio \/ vídeo/i }));
+    const mp4File = new File(['fake mp4 bytes'], 'grabacion_vista.mp4', { type: 'video/mp4' });
+    await userEvent.upload(screen.getByLabelText(/Cargar archivo de audio o vídeo/i), mp4File);
+
+    fireEvent.click(screen.getByRole('button', { name: /transcribir y analizar/i }));
+
+    await waitFor(() => {
+      expect(audioSpy).toHaveBeenCalledWith(mp4File, 'verbatim', false);
+    });
+
+    await waitFor(() => {
+      expect(analysisSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'Texto extraído de la grabación judicial MP4.',
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Dictamen Jurídico sobre Contrato')).toBeInTheDocument();
+    });
+  });
+
+  it('36. Error durante transcripción de MP4 (ej. sin pista de audio o corrupto) muestra mensaje contextual', async () => {
+    vi.spyOn(audioApi, 'transcribeAudio').mockRejectedValue(
+      new ApiError('El archivo MP4 no contiene una pista de audio que pueda transcribirse.', 400)
+    );
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio \/ vídeo/i }));
+    const mp4File = new File(['fake mp4 bytes'], 'video_mudo.mp4', { type: 'video/mp4' });
+    await userEvent.upload(screen.getByLabelText(/Cargar archivo de audio o vídeo/i), mp4File);
+
+    fireEvent.click(screen.getByRole('button', { name: /transcribir y analizar/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/El archivo MP4 no contiene una pista de audio que pueda transcribirse/i)
+      ).toBeInTheDocument();
+    });
+  });
 });
 

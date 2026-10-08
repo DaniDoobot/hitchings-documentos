@@ -16,6 +16,12 @@ from app.services.gemini_client import (
     GeminiEmptyResponseError,
     GeminiProviderError,
 )
+from app.services.media_service import (
+    CorruptedMediaError,
+    MediaDurationExceededError,
+    MediaProcessingError,
+    NoAudioTrackError,
+)
 
 router = APIRouter(prefix="/audio", tags=["Audio"])
 
@@ -26,14 +32,15 @@ BCP47_REGEX = re.compile(r"^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$")
     "/transcribe",
     response_model=AudioTranscribeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Transcribir archivo de audio mediante Gemini Interactions API",
+    summary="Transcribir archivo de audio o vídeo (MP4) mediante Gemini Interactions API",
     description=(
-        "Recibe un archivo de audio (mp3, wav, m4a, aac, ogg, flac, webm), valida formato y tamaño en streaming, "
-        "procesa mediante Gemini Files API e Interactions API oficial y devuelve texto normalizado y segmentos de interlocutores."
+        "Recibe un archivo de audio o vídeo MP4 (mp3, wav, m4a, aac, ogg, flac, webm, mp4), valida formato y tamaño en streaming, "
+        "para MP4 extrae y normaliza la pista de audio con FFmpeg, procesa mediante Gemini Files API e Interactions API oficial "
+        "y devuelve texto normalizado y segmentos de interlocutores."
     ),
 )
 async def transcribe_audio(
-    file: UploadFile = File(..., description="Archivo de audio a transcribir"),
+    file: UploadFile = File(..., description="Archivo de audio o vídeo a transcribir"),
     mode: Literal["verbatim", "smart"] = Query(
         "verbatim",
         description="Modo de transcripción: 'verbatim' (literal, hasta 1 hora) o 'smart' (limpieza gramatical y de muletillas).",
@@ -70,9 +77,22 @@ async def transcribe_audio(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=str(err),
         ) from err
-    except (EmptyAudioFileError, IncompatibleAudioParamsError, CorruptedAudioFileError, GeminiEmptyResponseError) as err:
+    except (
+        EmptyAudioFileError,
+        IncompatibleAudioParamsError,
+        CorruptedAudioFileError,
+        GeminiEmptyResponseError,
+        NoAudioTrackError,
+        CorruptedMediaError,
+        MediaDurationExceededError,
+    ) as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(err),
+        ) from err
+    except MediaProcessingError as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(err),
         ) from err
     except GeminiProviderError as err:

@@ -32,7 +32,7 @@ export const InputTabs: React.FC<InputTabsProps> = ({
         onClick={() => onSelectTab('audio')}
       >
         <Mic size={18} />
-        <span>Audio</span>
+        <span>Audio / Vídeo</span>
       </button>
 
       <button

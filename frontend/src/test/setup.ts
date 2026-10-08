@@ -6,6 +6,15 @@ if (typeof window !== 'undefined' && window.HTMLElement) {
   window.HTMLElement.prototype.scrollIntoView = function () {};
 }
 
+if (typeof window !== 'undefined' && window.URL) {
+  if (!window.URL.createObjectURL) {
+    window.URL.createObjectURL = () => 'blob:mock-object-url';
+  }
+  if (!window.URL.revokeObjectURL) {
+    window.URL.revokeObjectURL = () => {};
+  }
+}
+
 beforeEach(() => {
   vi.spyOn(authApi, 'getMe').mockResolvedValue({
     id: '00000000-0000-0000-0000-000000000001',

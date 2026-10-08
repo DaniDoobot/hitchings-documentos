@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react';
-import { UploadCloud, Music, Trash2, AlertCircle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { UploadCloud, Music, Video, Trash2, AlertCircle } from 'lucide-react';
 import type { TranscriptionMode } from '../types/api';
 
 const MAX_AUDIO_SIZE_BYTES = 200 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm'];
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm', '.mp4'];
 
 interface AudioAreaProps {
   selectedFile: File | null;
@@ -27,7 +27,25 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
   onDiarizationChange,
 }) => {
   const [isDragActive, setIsDragActive] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isVideo = Boolean(
+    selectedFile && selectedFile.name.toLowerCase().endsWith('.mp4')
+  );
+
+  useEffect(() => {
+    if (isVideo && selectedFile) {
+      const url = URL.createObjectURL(selectedFile);
+      setVideoUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+        setVideoUrl(null);
+      };
+    } else {
+      setVideoUrl(null);
+    }
+  }, [isVideo, selectedFile]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -45,7 +63,7 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
 
     if (!isAllowedExt) {
       onError(
-        'Formato no permitido. Solo se admiten archivos .mp3, .wav, .m4a, .aac, .ogg, .flac o .webm'
+        'Formato no permitido. Solo se admiten archivos .mp3, .wav, .m4a, .aac, .ogg, .flac, .webm o .mp4'
       );
       return;
     }
@@ -131,9 +149,9 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
             type="file"
             ref={fileInputRef}
             onChange={handleInputChange}
-            accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,audio/*"
+            accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,audio/*,video/mp4"
             style={{ display: 'none' }}
-            aria-label="Cargar archivo de audio"
+            aria-label="Cargar archivo de audio o vídeo"
           />
           <div className="dropzone-icon">
             <UploadCloud size={40} />
@@ -142,8 +160,41 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
             Arrastra tu archivo de audio aquí o haz clic para seleccionarlo
           </p>
           <p className="dropzone-hint">
-            Formatos admitidos: MP3, WAV, M4A, AAC, OGG, FLAC, WEBM (Máximo 200 MB)
+            Formatos admitidos: MP3, WAV, M4A, AAC, OGG, FLAC, WEBM, MP4 (Máximo 200 MB)
           </p>
+        </div>
+      ) : isVideo ? (
+        <div className="file-info-badge file-info-video">
+          <div className="video-preview-wrapper">
+            <video
+              controls
+              className="video-preview-player"
+              src={videoUrl || undefined}
+              aria-label="Previsualización de vídeo"
+            >
+              Tu navegador no soporta la reproducción de este vídeo.
+            </video>
+          </div>
+          <div className="file-info-video-footer">
+            <div className="file-info-details">
+              <Video size={24} color="#2563eb" />
+              <div>
+                <p className="file-name" title={selectedFile.name}>
+                  {selectedFile.name}
+                </p>
+                <p className="file-size">{formatFileSize(selectedFile.size)}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-remove"
+              onClick={handleRemove}
+              aria-label="Eliminar vídeo seleccionado"
+              title="Eliminar vídeo"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         </div>
       ) : (
         <div className="file-info-badge">

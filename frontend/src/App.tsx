@@ -213,6 +213,9 @@ function AuthenticatedApp() {
       case 'extracting':
         return 'Leyendo documento…';
       case 'transcribing':
+        if (activeTab === 'audio' && audioFile?.name.toLowerCase().endsWith('.mp4')) {
+          return 'Preparando audio de la grabación…';
+        }
         return 'Transcribiendo grabación…';
       case 'preparing':
         return 'Preparando texto…';

@@ -113,7 +113,7 @@ def test_transcribe_wav_valid_default_diarization_false(client: TestClient, mock
 def test_transcribe_unsupported_format_returns_415(client: TestClient):
     response = client.post(
         "/api/v1/audio/transcribe",
-        files={"file": ("video.mp4", b"fake mp4 video bytes", "video/mp4")},
+        files={"file": ("video.avi", b"fake avi video bytes", "video/x-msvideo")},
     )
 
     assert response.status_code == 415
@@ -651,6 +651,284 @@ def test_audio_transcription_interactions_create_explicitly_disables_storage():
     call_kwargs = mock_genai_client.interactions.create.call_args.kwargs
     assert call_kwargs.get("store") is False
     assert "previous_interaction_id" not in call_kwargs
+
+
+# ==============================================================================
+# TESTS BLOQUE 8A — COMPATIBILIDAD MP4 PARA TRANSCRIPCIÓN
+# ==============================================================================
+
+def generate_synthetic_mp4(num_bytes: int = 512) -> bytes:
+    """Genera bytes con cabecera ftyp MP4 válida."""
+    ftyp_box = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00isommp42"
+    padding = b"\x00" * max(0, num_bytes - len(ftyp_box))
+    return ftyp_box + padding
+
+
+def test_transcribe_mp4_valid_pipeline(client: TestClient, mock_gemini):
+    """Verifica el flujo completo para un archivo MP4: extracción local a FLAC y transcripción con Gemini."""
+    from app.services.media_service import MediaInspectionResult
+
+    mock_gemini.transcribe_audio.return_value = (
+        "Declaración del testigo en la grabación de vídeo judicial.",
+        [SpeakerSegment(speaker="spk_1", text="Declaración del testigo en la grabación de vídeo judicial.")],
+        "es",
+        None,
+    )
+
+    mp4_bytes = generate_synthetic_mp4()
+
+    def fake_extract_audio(input_video_path, output_audio_path):
+        from pathlib import Path
+        Path(output_audio_path).write_bytes(b"fLaCdummy")
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.extract_audio", side_effect=fake_extract_audio) as mock_extract:
+        mock_inspect.return_value = MediaInspectionResult(
+            has_audio=True,
+            audio_codec="aac",
+            duration_seconds=120.0,
+            format_name="mov,mp4",
+        )
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("vista_audiencia.mp4", mp4_bytes, "video/mp4")},
+            params={"mode": "verbatim", "diarization": True},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["filename"] == "vista_audiencia.mp4"
+    assert data["extension"] == "mp4"
+    assert data["content_type"] == "video/mp4"
+    assert "Declaración del testigo" in data["text"]
+    assert data["mode"] == "verbatim"
+    assert data["diarization"] is True
+    assert len(data["segments"]) == 1
+
+    # Verificar que se llamó a inspect y extract
+    mock_inspect.assert_called_once()
+    mock_extract.assert_called_once()
+
+    # Verificar que a Gemini se le subió el audio FLAC extraído y NO el archivo MP4
+    mock_gemini.upload_file.assert_called_once()
+    upload_call_args = mock_gemini.upload_file.call_args
+    assert upload_call_args.kwargs.get("mime_type") == "audio/flac"
+    assert upload_call_args.args[0].endswith(".flac")
+
+    # Verificar que se borró remotamente de Gemini
+    mock_gemini.delete_remote_file.assert_called_once_with("files/test_remote_audio_file_id")
+
+
+def test_transcribe_mp4_without_audio_track_returns_400(client: TestClient, mock_gemini):
+    """Verifica que un archivo MP4 sin pista de audio es rechazado con HTTP 400 y mensaje claro."""
+    from app.services.media_service import NoAudioTrackError
+
+    mp4_bytes = generate_synthetic_mp4()
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
+        mock_inspect.side_effect = NoAudioTrackError("El archivo MP4 no contiene una pista de audio que pueda transcribirse.")
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("video_mudo.mp4", mp4_bytes, "video/mp4")},
+        )
+
+    assert response.status_code == 400
+    assert "El archivo MP4 no contiene una pista de audio que pueda transcribirse." in response.json()["detail"]
+    mock_gemini.upload_file.assert_not_called()
+
+
+def test_transcribe_mp4_corrupted_ffprobe_returns_400(client: TestClient, mock_gemini):
+    """Verifica que un MP4 dañado o corrupto que falla en ffprobe devuelve HTTP 400."""
+    from app.services.media_service import CorruptedMediaError
+
+    mp4_bytes = generate_synthetic_mp4()
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
+        mock_inspect.side_effect = CorruptedMediaError("El archivo de vídeo no ha podido procesarse.")
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("corrupto.mp4", mp4_bytes, "video/mp4")},
+        )
+
+    assert response.status_code == 400
+    assert "El archivo de vídeo no ha podido procesarse." in response.json()["detail"]
+
+
+def test_transcribe_mp4_corrupted_header_without_ftyp_returns_400(client: TestClient, mock_gemini):
+    """Verifica que un MP4 con bytes de cabecera inválidos (sin ftyp) es rechazado en la validación inicial."""
+    fake_bytes = b"RANDOM_NON_MP4_BYTES" * 10
+    response = client.post(
+        "/api/v1/audio/transcribe",
+        files={"file": ("falso.mp4", fake_bytes, "video/mp4")},
+    )
+    assert response.status_code == 400
+    assert "firma ftyp no encontrada" in response.json()["detail"]
+
+
+def test_transcribe_mp4_extraction_error_returns_500(client: TestClient, mock_gemini):
+    """Verifica que un fallo inesperado durante ffmpeg extract devuelve HTTP 500 y no llama a Gemini."""
+    from app.services.media_service import MediaInspectionResult, MediaProcessingError
+
+    mp4_bytes = generate_synthetic_mp4()
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.extract_audio") as mock_extract:
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=60.0)
+        mock_extract.side_effect = MediaProcessingError("No se pudo extraer la pista de audio de la grabación de vídeo.")
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("error_ffmpeg.mp4", mp4_bytes, "video/mp4")},
+        )
+
+    assert response.status_code == 500
+    assert "No se pudo extraer la pista de audio de la grabación de vídeo." in response.json()["detail"]
+    mock_gemini.upload_file.assert_not_called()
+
+
+def test_transcribe_mp4_duration_exceeded_returns_400(client: TestClient, mock_gemini):
+    """Verifica que una grabación MP4 que supera 1 hora es rechazada con el mensaje especificado."""
+    from app.services.media_service import MediaInspectionResult
+
+    mp4_bytes = generate_synthetic_mp4()
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
+        # 3601 segundos (> 1 hora)
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=3601.0)
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("muy_larga.mp4", mp4_bytes, "video/mp4")},
+        )
+
+    assert response.status_code == 400
+    assert "La grabación supera la duración admitida actualmente. El soporte automático para grabaciones largas se incorporará mediante procesamiento por segmentos." in response.json()["detail"]
+    mock_gemini.upload_file.assert_not_called()
+
+
+def test_transcribe_mp4_diarization_duration_exceeded_returns_400(client: TestClient, mock_gemini):
+    """Verifica que una grabación MP4 de más de 30 minutos con diarización activa es rechazada."""
+    from app.services.media_service import MediaInspectionResult
+
+    mp4_bytes = generate_synthetic_mp4()
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
+        # 1850 segundos (> 30 minutos)
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=1850.0)
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("audiencia_diarization.mp4", mp4_bytes, "video/mp4")},
+            params={"mode": "verbatim", "diarization": True},
+        )
+
+    assert response.status_code == 400
+    assert "30 minutos" in response.json()["detail"]
+    mock_gemini.upload_file.assert_not_called()
+
+
+def test_transcribe_mp4_cleanup_on_gemini_failure(client: TestClient, mock_gemini):
+    """Verifica que todos los archivos temporales (MP4 y audio extraído) son eliminados si Gemini falla."""
+    from pathlib import Path
+    from app.services.media_service import MediaInspectionResult
+
+    mock_gemini.transcribe_audio.side_effect = GeminiProviderError("Fallo de red en Gemini API")
+
+    mp4_bytes = generate_synthetic_mp4()
+    created_paths = []
+
+    def tracking_extract_audio(input_video_path, output_audio_path):
+        Path(output_audio_path).write_bytes(b"fLaCcontent")
+        created_paths.append(output_audio_path)
+        created_paths.append(input_video_path)
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.extract_audio", side_effect=tracking_extract_audio):
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=60.0)
+
+        response = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("test_cleanup.mp4", mp4_bytes, "video/mp4")},
+        )
+
+    assert response.status_code == 502
+
+    # Verificar que todos los archivos temporales creados fueron eliminados
+    assert len(created_paths) == 2
+    for p in created_paths:
+        assert not Path(p).exists(), f"El archivo temporal {p} no fue eliminado tras error de Gemini."
+
+
+def test_media_service_unit_inspect_invokes_ffprobe_safely():
+    """Verifica que MediaService.inspect_media invoca ffprobe como lista de argumentos sin shell=True."""
+    import subprocess
+    from app.services.media_service import MediaService
+
+    service = MediaService()
+    fake_json_output = '{"streams": [{"codec_type": "audio", "codec_name": "aac"}], "format": {"duration": "45.5", "format_name": "mov,mp4"}}'
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=fake_json_output,
+            stderr="",
+        )
+
+        info = service.inspect_media("/tmp/video.mp4")
+
+    mock_run.assert_called_once()
+    call_args = mock_run.call_args
+    cmd = call_args[0][0]
+    assert isinstance(cmd, list)
+    assert cmd[0] == "ffprobe"
+    assert "/tmp/video.mp4" in cmd
+    assert call_args.kwargs.get("shell") is not True
+
+    assert info.has_audio is True
+    assert info.audio_codec == "aac"
+    assert info.duration_seconds == 45.5
+
+
+def test_media_service_unit_extract_invokes_ffmpeg_with_flac():
+    """Verifica que MediaService.extract_audio invoca ffmpeg para convertir a FLAC mono 16kHz sin shell=True."""
+    import subprocess
+    from pathlib import Path
+    from app.services.media_service import MediaService
+
+    service = MediaService()
+
+    def fake_ffmpeg_run(cmd, **kwargs):
+        # cmd[-1] es el archivo de salida
+        output_file = cmd[-1]
+        Path(output_file).write_bytes(b"dummy_flac_content")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_ffmpeg_run) as mock_run:
+        import tempfile
+        out_f = tempfile.NamedTemporaryFile(delete=False, suffix=".flac")
+        out_f.close()
+        out_path = out_f.name
+        try:
+            service.extract_audio("/tmp/input.mp4", out_path)
+            mock_run.assert_called_once()
+            cmd = mock_run.call_args[0][0]
+            assert isinstance(cmd, list)
+            assert cmd[0] == "ffmpeg"
+            assert "-vn" in cmd
+            assert "-c:a" in cmd
+            assert "flac" in cmd
+            assert "-ac" in cmd
+            assert "1" in cmd
+            assert "-ar" in cmd
+            assert "16000" in cmd
+            assert mock_run.call_args.kwargs.get("shell") is not True
+        finally:
+            Path(out_path).unlink(missing_ok=True)
+
 
 
 
