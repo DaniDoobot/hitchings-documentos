@@ -164,19 +164,19 @@ describe('HITCHINGS Documentos - Frontend Base (Bloque 6A)', () => {
     expect(screen.getByText('grabacion.mp3')).toBeInTheDocument();
   });
 
-  it('8. Muestra mensaje de error cuando el audio supera los 200 MB', async () => {
+  it('8. Muestra mensaje de error cuando el audio supera 1 GB', async () => {
     await renderAppReady();
 
     fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
 
     const hugeAudio = new File(['audio'], 'audiencia.wav', { type: 'audio/wav' });
-    Object.defineProperty(hugeAudio, 'size', { value: 205 * 1024 * 1024 });
+    Object.defineProperty(hugeAudio, 'size', { value: 1025 * 1024 * 1024 });
 
     const input = screen.getByLabelText(/Cargar archivo de audio/i);
     fireEvent.change(input, { target: { files: [hugeAudio] } });
 
     expect(
-      screen.getByText(/El archivo de audio supera el tamaño máximo permitido de 200 MB/i)
+      screen.getByText(/El archivo supera el tamaño máximo permitido de 1 GB/i)
     ).toBeInTheDocument();
   });
 
@@ -418,20 +418,26 @@ describe('HITCHINGS Documentos - Frontend Base (Bloque 6A)', () => {
     expect(screen.queryByLabelText(/Previsualización de vídeo/i)).not.toBeInTheDocument();
   });
 
-  it('22. Muestra mensaje de error cuando un archivo MP4 supera los 200 MB', async () => {
+  it('22. Muestra mensaje de error cuando un archivo MP4 supera 1 GB', async () => {
     await renderAppReady();
 
     fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
     const hugeMp4 = new File(['video'], 'grabacion_larga.mp4', { type: 'video/mp4' });
-    Object.defineProperty(hugeMp4, 'size', { value: 205 * 1024 * 1024 });
+    Object.defineProperty(hugeMp4, 'size', { value: 1025 * 1024 * 1024 });
 
     const input = screen.getByLabelText(/Cargar archivo de audio/i);
     fireEvent.change(input, { target: { files: [hugeMp4] } });
 
     await waitFor(() => {
       expect(
-        screen.getByText(/supera el tamaño máximo permitido de 200 MB/i)
+        screen.getByText(/supera el tamaño máximo permitido de 1 GB/i)
       ).toBeInTheDocument();
     });
+  });
+
+  it('23. La dropzone de Audio / Vídeo indica soporte de hasta 1 GB', async () => {
+    await renderAppReady();
+    fireEvent.click(screen.getByRole('tab', { name: /audio/i }));
+    expect(screen.getByText(/Máximo 1 GB/i)).toBeInTheDocument();
   });
 });

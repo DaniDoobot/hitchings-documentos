@@ -96,6 +96,9 @@ export interface AudioTranscribeResponse {
   segments: SpeakerSegment[];
   warnings: string[];
   usage?: AudioTranscriptionUsage | null;
+  was_segmented?: boolean;
+  segment_count?: number;
+  duration_seconds?: number | null;
 }
 
 export interface TextPrepareRequest {

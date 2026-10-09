@@ -25,7 +25,9 @@ class Settings(BaseSettings):
 
     # Processing Limits
     MAX_DOCUMENT_SIZE_MB: int = 25
-    MAX_AUDIO_SIZE_MB: int = 200
+    MAX_MEDIA_SIZE_MB: int = 1024
+    MAX_AUDIO_SIZE_MB: int = 1024
+    MAX_MEDIA_DURATION_HOURS: float = 8.0
     MAX_TEXT_CHARACTERS: int = 5000000
     MAX_ANALYSIS_INPUT_TOKENS: int = 900000
     MAX_EXPORT_CHARACTERS: int = 2000000
@@ -74,7 +76,12 @@ class Settings(BaseSettings):
 
     @property
     def max_audio_size_bytes(self) -> int:
-        return self.MAX_AUDIO_SIZE_MB * 1024 * 1024
+        mb = min(self.MAX_MEDIA_SIZE_MB, self.MAX_AUDIO_SIZE_MB)
+        return mb * 1024 * 1024
+
+    @property
+    def max_media_duration_seconds(self) -> float:
+        return self.MAX_MEDIA_DURATION_HOURS * 3600.0
 
 
 settings = Settings()

@@ -888,5 +888,55 @@ describe('HITCHINGS Documentos - Flujos Extremo a Extremo (Bloque 6B)', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('37. Grabación segmentada con diarización propaga warning de interlocutores y completa análisis', async () => {
+    const mockSegmentedResponse: AudioTranscribeResponse = {
+      filename: 'grabacion_larga.mp4',
+      extension: 'mp4',
+      content_type: 'video/mp4',
+      size_bytes: 50 * 1024 * 1024,
+      transcription_model: 'gemini-3.5-transcribe',
+      mode: 'verbatim',
+      diarization: true,
+      text: '[Segmento 1]\nIntervención inicial.\n\n[Segmento 2]\nIntervención siguiente.',
+      word_count: 8,
+      character_count: 55,
+      detected_language: 'es',
+      language: null,
+      segments: [],
+      warnings: [
+        'En grabaciones largas procesadas por segmentos, la numeración de los interlocutores puede reiniciarse entre segmentos.',
+      ],
+      was_segmented: true,
+      segment_count: 2,
+      duration_seconds: 4000,
+    };
+
+    const audioSpy = vi.spyOn(audioApi, 'transcribeAudio').mockResolvedValue(mockSegmentedResponse);
+    const analysisSpy = vi.spyOn(analysisApi, 'analyzeContent').mockResolvedValue(mockAnalysisResponse);
+
+    await renderAndAwaitReady();
+
+    fireEvent.click(screen.getByRole('tab', { name: /audio \/ vídeo/i }));
+    const mp4File = new File(['fake mp4 bytes'], 'grabacion_larga.mp4', { type: 'video/mp4' });
+    await userEvent.upload(screen.getByLabelText(/Cargar archivo de audio o vídeo/i), mp4File);
+
+    fireEvent.click(screen.getByRole('button', { name: /transcribir y analizar/i }));
+
+    await waitFor(() => {
+      expect(audioSpy).toHaveBeenCalled();
+      expect(analysisSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: '[Segmento 1]\nIntervención inicial.\n\n[Segmento 2]\nIntervención siguiente.',
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/la numeración de los interlocutores puede reiniciarse entre segmentos/i)
+      ).toBeInTheDocument();
+    });
+  });
 });
 

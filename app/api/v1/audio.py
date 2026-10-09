@@ -32,22 +32,22 @@ BCP47_REGEX = re.compile(r"^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$")
     "/transcribe",
     response_model=AudioTranscribeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Transcribir archivo de audio o vídeo (MP4) mediante Gemini Interactions API",
+    summary="Transcribir archivo de audio o vídeo (MP4) con soporte de grabaciones largas",
     description=(
-        "Recibe un archivo de audio o vídeo MP4 (mp3, wav, m4a, aac, ogg, flac, webm, mp4), valida formato y tamaño en streaming, "
-        "para MP4 extrae y normaliza la pista de audio con FFmpeg, procesa mediante Gemini Files API e Interactions API oficial "
-        "y devuelve texto normalizado y segmentos de interlocutores."
+        "Recibe un archivo de audio o vídeo MP4 (mp3, wav, m4a, aac, ogg, flac, webm, mp4) de hasta 1 GB y 8 horas de duración. "
+        "Valida formato y tamaño en streaming. Para grabaciones de larga duración realiza normalización a master FLAC y segmentación "
+        "automática segura en llamadas continuas sin solapamiento, consolidando una única transcripción determinista."
     ),
 )
 async def transcribe_audio(
-    file: UploadFile = File(..., description="Archivo de audio o vídeo a transcribir"),
+    file: UploadFile = File(..., description="Archivo de audio o vídeo a transcribir (hasta 1 GB)"),
     mode: Literal["verbatim", "smart"] = Query(
         "verbatim",
-        description="Modo de transcripción: 'verbatim' (literal, hasta 1 hora) o 'smart' (limpieza gramatical y de muletillas).",
+        description="Modo de transcripción: 'verbatim' (literal) o 'smart' (limpieza gramatical y de muletillas).",
     ),
     diarization: bool = Query(
         False,
-        description="Identificación de interlocutores por voz (solo compatible con modo 'verbatim', duración máxima 30 minutos). Por defecto: False.",
+        description="Identificación de interlocutores por voz (solo compatible con modo 'verbatim'). Por defecto: False.",
     ),
     language: str | None = Query(
         None,

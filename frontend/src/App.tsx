@@ -214,9 +214,9 @@ function AuthenticatedApp() {
         return 'Leyendo documento…';
       case 'transcribing':
         if (activeTab === 'audio' && audioFile?.name.toLowerCase().endsWith('.mp4')) {
-          return 'Preparando audio de la grabación…';
+          return 'Preparando audio de la grabación… Los archivos largos pueden tardar varios minutos.';
         }
-        return 'Transcribiendo grabación…';
+        return 'Procesando la grabación… Los archivos largos pueden tardar varios minutos.';
       case 'preparing':
         return 'Preparando texto…';
       case 'analyzing':

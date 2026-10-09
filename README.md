@@ -160,38 +160,38 @@ Variables disponibles:
 
 ### 1. Transcripción de Audio y Vídeo (`POST /api/v1/audio/transcribe`)
 
-Recibe un archivo de audio o vídeo (MP4) mediante `multipart/form-data`, valida su formato y tamaño en streaming, procesa el contenido con la **Gemini Interactions API** oficial (`gemini-3.5-transcribe`) y devuelve la transcripción literal o refinada, junto con metadatos y segmentos de interlocutores.
+Recibe un archivo de audio o vídeo (MP4) mediante `multipart/form-data`, valida su formato y tamaño en streaming (hasta **1 GB**), inspecciona duración (hasta **8 horas** operativas), realiza segmentación automática transparente cuando el archivo excede los límites single-pass de la API, procesa mediante la **Gemini Interactions API** oficial (`gemini-3.5-transcribe`) y devuelve una única transcripción consolidada determinista con metadatos y segmentos de interlocutores.
 
 * **Formatos soportados**:
   * **Audio**: `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`, `.flac`, `.webm`.
   * **Vídeo (Grabaciones Judiciales)**: `.mp4`.
-* **Procesamiento de Grabaciones MP4 (Bloque 8A)**:
-  * El contenedor MP4 es inspeccionado localmente con `ffprobe` para verificar su integridad técnica y la existencia de al menos una pista de audio transcribible.
-  * La pista de audio es extraída y normalizada localmente con `ffmpeg` a formato **FLAC mono 16 kHz** (sin pérdidas, ligero y óptimo para transcripción de voz).
-  * El vídeo original **nunca se envía a Gemini como vídeo**; únicamente se transmite la pista de audio extraída a la Files API de Gemini, reutilizando de forma idéntica el pipeline existente.
+* **Procesamiento de Grabaciones Largas (Bloque 8B)**:
+  * **Límite de tamaño**: Hasta **1 GB** por archivo (`MAX_MEDIA_SIZE_MB = 1024`), transmitido en streaming a disco sin sobrecargar la memoria RAM.
+  * **Límite de duración operativo**: Hasta **8 horas** por archivo (`MAX_MEDIA_DURATION_HOURS = 8.0`). Archivos que superen las 8 horas son rechazados preventivamente con **HTTP 400**.
+  * **Segmentación automática inteligente**:
+    * Si la grabación cabe en una única llamada (≤ 1 hora estándar, ≤ 30 minutos con diarización), se procesa en un único pase sin segmentar.
+    * Si supera el límite single-pass, el backend normaliza temporalmente el medio a un **master FLAC mono 16 kHz**, planifica fragmentos contiguos sin solapamiento (aprovechando silencios mediante `silencedetect` cuando es viable) y ejecuta transcripciones secuenciales independientes.
+    * Los fragmentos internos se procesan de forma 100% transparente: el usuario solo interactúa con un único archivo y recibe una única transcripción consolidada.
+* **Procesamiento de Grabaciones MP4**:
+  * El contenedor MP4 es inspeccionado localmente con `ffprobe` para verificar su integridad y la existencia de pista de audio.
+  * La pista de audio es extraída y normalizada localmente con `ffmpeg` a formato **FLAC mono 16 kHz**.
+  * El vídeo original **nunca se envía a Gemini como vídeo**; únicamente se transmite la pista de audio (o sus fragmentos) a Gemini Files API.
 * **Parámetros opcionales (query params)**:
   * `mode`: `verbatim` (por defecto, máxima fidelidad textual con lo hablado) o `smart` (limpieza de muletillas, disfluencias y formato refinado).
   * `diarization`: booleano (**`false` por defecto**). Identificación y separación de interlocutores (`diarization_mode: "speaker"`).
-    * *Decisión de arquitectura*: Se mantiene en `false` por defecto debido a las limitaciones de duración del proveedor:
-      * **Transcripción estándar sin diarización**: Hasta **1 hora** de audio por petición.
-      * **Transcripción con diarización**: Máximo **30 minutos** de audio por petición.
-      * Dado que HITCHINGS procesa grabaciones extensas de vistas orales y declaraciones judiciales, se prioriza por defecto la ventana de 1 hora.
+    * *Aclaración en grabaciones largas*: En grabaciones extensas procesadas por segmentos, los identificadores de interlocutor (`Hablante 1`, `Hablante 2`) pueden reiniciarse entre segmentos delimitados (`[Segmento 1]`, `[Segmento 2]...`). La API informa de esta circunstancia mediante una advertencia explícita en `warnings`.
     * *Compatibilidad*: La diarización solo es compatible con el modo `verbatim`. Si se solicita `mode="smart"` con `diarization=true`, la API devuelve inmediatamente **HTTP 400 Bad Request**.
   * `language`: string opcional con código de idioma BCP-47 (ej. `"es"`, `"es-ES"`, `"en-US"`). Si se omite, Gemini aplica autodetección de idioma de forma automática.
-* **Límites de tamaño vs. límites de duración (Bloque 8A)**:
-  * `MAX_AUDIO_SIZE_MB` (200 MB por defecto) es un límite técnico de transporte para proteger la memoria RAM del backend mediante streaming y corte anticipado (**HTTP 413**).
-  * Límite de duración protegido por `ffprobe`: Si la grabación supera 1 hora (o 30 minutos con diarización), la API rechaza la petición anticipadamente con **HTTP 400** y un mensaje explicativo, indicando que el soporte automático para grabaciones largas se incorporará mediante procesamiento por segmentos (Bloque 8B).
-* **Timestamps**: No se solicitan marcas temporales palabra por palabra (`timestamp_granularities`) para optimizar rendimiento y tiempo de respuesta. La diarización devuelve de forma limpia y fiable el identificador del interlocutor (`spk_1`, `spk_2`, etc.) y el contenido asociado.
 
 #### Flujo Técnico de Privacidad y Eliminación de Grabaciones
 ```text
-Usuario → Backend HITCHINGS (MP4 / Audio) → Extracción FFmpeg (FLAC temp) → Gemini Files API → Interactions API → Eliminación Remota y Local Inmediata
+Usuario → Backend HITCHINGS (MP4 / Audio ≤ 1 GB) → Normalización Master FLAC → Fragmentos Seguros → Gemini Files API → Interactions API → Consolidación → Eliminación Remota y Local Inmediata
 ```
-* **Sin almacenamiento permanente**: HITCHINGS no almacena de forma persistente ningún archivo de audio ni vídeo.
-* **Archivos temporales locales**: Tanto el archivo original subido (MP4/Audio) como el audio extraído (FLAC) se eliminan siempre de forma garantizada en un bloque `finally`, tanto tras éxito como ante cualquier excepción.
+* **Sin almacenamiento permanente**: HITCHINGS no almacena de forma persistente ningún archivo de audio, vídeo, fragmento ni transcripción en base de datos.
+* **Archivos temporales locales**: Tanto el archivo original subido (MP4/Audio) como el master FLAC y los fragmentos temporales se eliminan siempre de forma incondicional en un bloque `finally`, tanto tras éxito como ante cualquier excepción.
 * **Interactions API sin almacenamiento (`store=False`)**: La llamada a `client.interactions.create` se ejecuta explícitamente con `store=False`, deshabilitando el almacenamiento de la interacción en el proyecto de Gemini y operando de forma 100% stateless.
-* **Eliminación remota garantizada**: El archivo subido a Gemini Files API se elimina de forma explícita e inmediata tras la transcripción mediante `client.files.delete(name)` en bloque `finally`.
-* **Confidencialidad absoluta en logs**: No se registran nombres originales de archivos, ni palabras transcritas, ni datos personales. Solo métricas numéricas técnicas (bytes, duración en ms, recuento de palabras).
+* **Eliminación remota garantizada**: Cada fragmento subido a Gemini Files API se elimina de forma explícita e inmediata tras su transcripción mediante `client.files.delete(name)` en bloque `finally`.
+* **Confidencialidad absoluta en logs**: No se registran nombres originales de archivos, ni palabras transcritas, ni datos personales. Solo métricas numéricas técnicas (bytes, duración en ms, recuento de palabras, fragmentos procesados).
 
 **Ejemplo de llamada con cURL:**
 ```bash

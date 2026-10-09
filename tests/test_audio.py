@@ -790,14 +790,14 @@ def test_transcribe_mp4_extraction_error_returns_500(client: TestClient, mock_ge
 
 
 def test_transcribe_mp4_duration_exceeded_returns_400(client: TestClient, mock_gemini):
-    """Verifica que una grabación MP4 que supera 1 hora es rechazada con el mensaje especificado."""
+    """Verifica que una grabación MP4 que supera 8 horas es rechazada con el mensaje especificado."""
     from app.services.media_service import MediaInspectionResult
 
     mp4_bytes = generate_synthetic_mp4()
 
     with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
-        # 3601 segundos (> 1 hora)
-        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=3601.0)
+        # 28801 segundos (> 8 horas)
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=28801.0)
 
         response = client.post(
             "/api/v1/audio/transcribe",
@@ -805,19 +805,19 @@ def test_transcribe_mp4_duration_exceeded_returns_400(client: TestClient, mock_g
         )
 
     assert response.status_code == 400
-    assert "La grabación supera la duración admitida actualmente. El soporte automático para grabaciones largas se incorporará mediante procesamiento por segmentos." in response.json()["detail"]
+    assert "La grabación supera la duración máxima admitida actualmente de 8 horas." in response.json()["detail"]
     mock_gemini.upload_file.assert_not_called()
 
 
 def test_transcribe_mp4_diarization_duration_exceeded_returns_400(client: TestClient, mock_gemini):
-    """Verifica que una grabación MP4 de más de 30 minutos con diarización activa es rechazada."""
+    """Verifica que una grabación MP4 de más de 8 horas con diarización activa es rechazada."""
     from app.services.media_service import MediaInspectionResult
 
     mp4_bytes = generate_synthetic_mp4()
 
     with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
-        # 1850 segundos (> 30 minutos)
-        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=1850.0)
+        # 28801 segundos (> 8 horas)
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=28801.0)
 
         response = client.post(
             "/api/v1/audio/transcribe",
@@ -826,7 +826,7 @@ def test_transcribe_mp4_diarization_duration_exceeded_returns_400(client: TestCl
         )
 
     assert response.status_code == 400
-    assert "30 minutos" in response.json()["detail"]
+    assert "La grabación supera la duración máxima admitida actualmente de 8 horas." in response.json()["detail"]
     mock_gemini.upload_file.assert_not_called()
 
 
@@ -928,6 +928,325 @@ def test_media_service_unit_extract_invokes_ffmpeg_with_flac():
             assert mock_run.call_args.kwargs.get("shell") is not True
         finally:
             Path(out_path).unlink(missing_ok=True)
+
+
+# ==============================================================================
+# BLOQUE 8B — PRUEBAS DE GRABACIONES LARGAS, SEGMENTACIÓN Y CONSOLIDACIÓN
+# ==============================================================================
+
+def test_8b_short_audio_single_call(client: TestClient, mock_gemini):
+    """1. Audio corto (<= 3600s) sigue haciendo una única llamada a Gemini sin segmentar."""
+    from app.services.media_service import MediaInspectionResult
+
+    wav_bytes = generate_synthetic_wav()
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=120.0)
+        res = client.post("/api/v1/audio/transcribe", files={"file": ("corto.wav", wav_bytes, "audio/wav")})
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["was_segmented"] is False
+    assert data["segment_count"] == 1
+    assert data["duration_seconds"] == 120.0
+    mock_gemini.upload_file.assert_called_once()
+    mock_gemini.transcribe_audio.assert_called_once()
+
+
+def test_8b_short_mp4_single_call(client: TestClient, mock_gemini):
+    """2. MP4 corto (<= 3600s) mantiene comportamiento 8A intacto: extrae audio y hace 1 llamada."""
+    from app.services.media_service import MediaInspectionResult
+
+    mp4_bytes = generate_synthetic_mp4()
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.extract_audio") as mock_extract:
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=300.0)
+        res = client.post("/api/v1/audio/transcribe", files={"file": ("corto.mp4", mp4_bytes, "video/mp4")})
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["was_segmented"] is False
+    assert data["segment_count"] == 1
+    mock_extract.assert_called_once()
+    mock_gemini.upload_file.assert_called_once()
+    mock_gemini.transcribe_audio.assert_called_once()
+
+
+def test_8b_long_standard_audio_segmented(client: TestClient, mock_gemini):
+    """3 y 11. Audio largo estándar (> 3600s) se segmenta, procesa secuencialmente y respeta orden."""
+    from app.schemas.audio import AudioTranscriptionUsage
+    from app.services.media_service import MediaInspectionResult
+
+    wav_bytes = generate_synthetic_wav()
+    call_count = 0
+
+    def mock_transcribe(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return (
+            f"Texto del fragmento {call_count}.",
+            [],
+            "es",
+            AudioTranscriptionUsage(input_tokens=100, output_tokens=50, total_tokens=150),
+        )
+
+    mock_gemini.transcribe_audio.side_effect = mock_transcribe
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.convert_to_master_flac") as mock_conv, \
+         patch("app.services.audio_transcription.media_service.detect_silences", return_value=[]), \
+         patch("app.services.audio_transcription.media_service.create_segment_chunk") as mock_chunk:
+        # 5400s = 90 minutos -> 2 fragmentos de 2700s
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=5400.0)
+
+        res = client.post("/api/v1/audio/transcribe", files={"file": ("largo.wav", wav_bytes, "audio/wav")})
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["was_segmented"] is True
+    assert data["segment_count"] == 2
+    mock_conv.assert_called_once()
+    assert mock_chunk.call_count == 2
+    assert mock_gemini.upload_file.call_count == 2
+    assert mock_gemini.transcribe_audio.call_count == 2
+    # Comprobar orden estricto de consolidación
+    assert data["text"] == "Texto del fragmento 1.\n\nTexto del fragmento 2."
+    # Comprobar agregación de usage
+    assert data["usage"]["input_tokens"] == 200
+    assert data["usage"]["output_tokens"] == 100
+    assert data["usage"]["total_tokens"] == 300
+
+
+def test_8b_long_standard_mp4_segmented(client: TestClient, mock_gemini):
+    """4 y 13. MP4 largo extrae master FLAC una sola vez, nunca sube master completo a Gemini."""
+    from app.services.media_service import MediaInspectionResult
+
+    mp4_bytes = generate_synthetic_mp4()
+    mock_gemini.transcribe_audio.return_value = ("Texto fragmento MP4.", [], "es", None)
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.extract_audio") as mock_extract, \
+         patch("app.services.audio_transcription.media_service.detect_silences", return_value=[]), \
+         patch("app.services.audio_transcription.media_service.create_segment_chunk"):
+        # 5400s (2 fragmentos)
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=5400.0)
+
+        res = client.post("/api/v1/audio/transcribe", files={"file": ("vista_larga.mp4", mp4_bytes, "video/mp4")})
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["was_segmented"] is True
+    assert data["segment_count"] == 2
+    # Master extraído exactamente una vez
+    mock_extract.assert_called_once()
+    # Gemini fue invocado 2 veces con los fragmentos
+    assert mock_gemini.upload_file.call_count == 2
+
+
+def test_8b_long_diarization_safe_chunk_limit_and_warning(client: TestClient, mock_gemini):
+    """5, 16 y 17. Diarización larga divide en fragmentos seguros, añade delimitadores y warning."""
+    from app.schemas.audio import SpeakerSegment
+    from app.services.media_service import MediaInspectionResult
+
+    wav_bytes = generate_synthetic_wav()
+    step = 0
+
+    def mock_transcribe_diar(*args, **kwargs):
+        nonlocal step
+        step += 1
+        return (
+            f"Hablante 1: Intervención {step}.",
+            [SpeakerSegment(speaker="spk_1", text=f"Intervención {step}.")],
+            "es",
+            None,
+        )
+
+    mock_gemini.transcribe_audio.side_effect = mock_transcribe_diar
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.convert_to_master_flac"), \
+         patch("app.services.audio_transcription.media_service.detect_silences", return_value=[]), \
+         patch("app.services.audio_transcription.media_service.create_segment_chunk"):
+        # 3600s con diarización -> chunks de max 1740s / target 1500s -> se divide en 3 fragmentos
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=3600.0)
+
+        res = client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("diar_larga.wav", wav_bytes, "audio/wav")},
+            params={"mode": "verbatim", "diarization": True},
+        )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["was_segmented"] is True
+    assert data["segment_count"] >= 2
+    # Delimitadores de segmentos presentes
+    assert "[Segmento 1]" in data["text"]
+    assert "[Segmento 2]" in data["text"]
+    # Warning de interlocutores presente
+    assert any("la numeración de los interlocutores puede reiniciarse" in w for w in data["warnings"])
+
+
+def test_8b_plan_segments_unit_coverage_and_invariants():
+    """6, 7 y 8. plan_segments cubre de 0 a fin, sin huecos ni overlap, y respeta límites máximos."""
+    from app.services.media_service import MediaService, STANDARD_CHUNK_MAX_SECONDS, DIARIZATION_CHUNK_MAX_SECONDS
+
+    service = MediaService()
+
+    # Caso 1: Estándar 3 horas (10800s)
+    plan_std = service.plan_segments(total_duration=10800.0, diarization=False)
+    assert len(plan_std) >= 4
+    assert plan_std[0].start_seconds == 0.0
+    assert plan_std[-1].end_seconds == 10800.0
+    for i in range(len(plan_std) - 1):
+        assert plan_std[i].end_seconds == plan_std[i + 1].start_seconds
+    for seg in plan_std:
+        assert seg.duration_seconds <= STANDARD_CHUNK_MAX_SECONDS
+
+    # Caso 2: Diarización 2 horas (7200s)
+    plan_diar = service.plan_segments(total_duration=7200.0, diarization=True)
+    assert len(plan_diar) >= 4
+    assert plan_diar[0].start_seconds == 0.0
+    assert plan_diar[-1].end_seconds == 7200.0
+    for i in range(len(plan_diar) - 1):
+        assert plan_diar[i].end_seconds == plan_diar[i + 1].start_seconds
+    for seg in plan_diar:
+        assert seg.duration_seconds <= DIARIZATION_CHUNK_MAX_SECONDS
+
+
+def test_8b_silence_detection_uses_nearby_silence():
+    """9. plan_segments utiliza un silencio detectado cercano al punto de corte target."""
+    from app.services.media_service import MediaService
+
+    service = MediaService()
+    # Total: 6000s. Target: 2700s. Silencio en [2680s, 2690s] (punto medio 2685s)
+    silences = [(2680.0, 2690.0)]
+    plan = service.plan_segments(total_duration=6000.0, diarization=False, detected_silences=silences)
+
+    assert len(plan) >= 2
+    # El primer segmento debió cortar en el silencio (2685.0s) en vez de en 2700.0s
+    assert plan[0].end_seconds == 2685.0
+    assert plan[1].start_seconds == 2685.0
+
+
+def test_8b_silence_detection_fallback_on_failure():
+    """10. Si la detección de silencios no encuentra nada, plan_segments corta por tiempo fijo."""
+    from app.services.media_service import MediaService
+
+    service = MediaService()
+    # Sin silencios
+    plan = service.plan_segments(total_duration=6000.0, diarization=False, detected_silences=[])
+    assert len(plan) >= 2
+    assert plan[0].end_seconds == 2700.0
+    assert plan[1].start_seconds == 2700.0
+
+
+def test_8b_intermediate_chunk_failure_aborts_without_partial_and_cleans_up(client: TestClient, mock_gemini):
+    """18 y 19. Si falla un chunk intermedio, aborta sin devolver parcial y limpia todos los recursos."""
+    from app.services.media_service import MediaInspectionResult
+
+    wav_bytes = generate_synthetic_wav()
+    call_idx = 0
+
+    def mock_transcribe_with_failure(*args, **kwargs):
+        nonlocal call_idx
+        call_idx += 1
+        if call_idx == 2:
+            raise GeminiProviderError("Fallo inesperado de cuota en segmento 2")
+        return ("Texto ok.", [], "es", None)
+
+    mock_gemini.transcribe_audio.side_effect = mock_transcribe_with_failure
+
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect, \
+         patch("app.services.audio_transcription.media_service.convert_to_master_flac"), \
+         patch("app.services.audio_transcription.media_service.detect_silences", return_value=[]), \
+         patch("app.services.audio_transcription.media_service.create_segment_chunk"):
+        # 5400s -> 2 segmentos
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=5400.0)
+
+        res = client.post("/api/v1/audio/transcribe", files={"file": ("fallo_seg.wav", wav_bytes, "audio/wav")})
+
+    # No devuelve 200 con transcripción parcial: devuelve HTTP 502/500
+    assert res.status_code in (500, 502)
+    assert "No se ha podido completar la transcripción de la grabación" in res.json()["detail"]
+
+
+def test_8b_duration_over_8h_rejected_before_gemini(client: TestClient, mock_gemini):
+    """21. Grabaciones de más de 8 horas se rechazan preventivamente con HTTP 400 sin invocar Gemini."""
+    from app.services.media_service import MediaInspectionResult
+
+    wav_bytes = generate_synthetic_wav()
+    with patch("app.services.audio_transcription.media_service.inspect_media") as mock_inspect:
+        # 28805s (> 8 horas = 28800s)
+        mock_inspect.return_value = MediaInspectionResult(has_audio=True, duration_seconds=28805.0)
+
+        res = client.post("/api/v1/audio/transcribe", files={"file": ("ocho_horas.wav", wav_bytes, "audio/wav")})
+
+    assert res.status_code == 400
+    assert "La grabación supera la duración máxima admitida actualmente de 8 horas." in res.json()["detail"]
+    mock_gemini.upload_file.assert_not_called()
+
+
+def test_8b_size_over_max_media_size_rejected(client: TestClient, monkeypatch):
+    """22. Archivos que superan el límite configurado son rechazados con HTTP 413."""
+    monkeypatch.setattr(settings, "MAX_MEDIA_SIZE_MB", 1)
+    monkeypatch.setattr(settings, "MAX_AUDIO_SIZE_MB", 1)
+    large_wav = generate_synthetic_wav() + (b"\x80" * (2 * 1024 * 1024))
+
+    res = client.post("/api/v1/audio/transcribe", files={"file": ("excesivo.wav", large_wav, "audio/wav")})
+    assert res.status_code == 413
+    assert "excede el límite máximo" in res.json()["detail"]
+
+
+def test_8b_media_service_detect_silences_parsing():
+    """24. Unit test seguro del parser de silencedetect de MediaService."""
+    import subprocess
+    from app.services.media_service import MediaService
+
+    service = MediaService()
+    fake_stderr = (
+        "[silencedetect @ 0x123] silence_start: 120.4\n"
+        "[silencedetect @ 0x123] silence_end: 121.8 | silence_duration: 1.4\n"
+        "[silencedetect @ 0x123] silence_start: 240.0\n"
+        "[silencedetect @ 0x123] silence_end: 242.0 | silence_duration: 2.0\n"
+    )
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=fake_stderr)
+        silences = service.detect_silences("/tmp/test.flac")
+
+    assert len(silences) == 2
+    assert silences[0] == (120.4, 121.8)
+    assert silences[1] == (240.0, 242.0)
+
+
+def test_8b_media_service_convert_to_master_flac_invokes_ffmpeg():
+    """25. Unit test de convert_to_master_flac verificando invocación de ffmpeg sin shell."""
+    import subprocess
+    from pathlib import Path
+    from app.services.media_service import MediaService
+
+    service = MediaService()
+
+    def fake_ffmpeg(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"dummy_flac")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_ffmpeg) as mock_run:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".flac")
+        tmp.close()
+        try:
+            service.convert_to_master_flac("/tmp/input.mp3", tmp.name)
+            mock_run.assert_called_once()
+            cmd = mock_run.call_args[0][0]
+            assert cmd[0] == "ffmpeg"
+            assert "-c:a" in cmd and "flac" in cmd
+            assert "-ar" in cmd and "16000" in cmd
+            assert "-ac" in cmd and "1" in cmd
+            assert mock_run.call_args.kwargs.get("shell") is not True
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+
 
 
 

@@ -47,3 +47,16 @@ class AudioTranscribeResponse(BaseModel):
         default=None,
         description="Desglose del consumo de tokens de la transcripción (si lo devuelve el proveedor)",
     )
+    was_segmented: bool = Field(
+        default=False,
+        description="Indica si la grabación fue procesada en múltiples segmentos",
+    )
+    segment_count: int = Field(
+        default=1,
+        ge=1,
+        description="Número de segmentos en los que se dividió la grabación",
+    )
+    duration_seconds: float | None = Field(
+        default=None,
+        description="Duración total detectada de la grabación en segundos",
+    )

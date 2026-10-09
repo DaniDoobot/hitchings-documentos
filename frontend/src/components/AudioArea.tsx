@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { UploadCloud, Music, Video, Trash2, AlertCircle } from 'lucide-react';
 import type { TranscriptionMode } from '../types/api';
 
-const MAX_AUDIO_SIZE_BYTES = 200 * 1024 * 1024;
+const MAX_AUDIO_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm', '.mp4'];
 
 interface AudioAreaProps {
@@ -50,7 +50,8 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   const validateAndSetFile = (file: File) => {
@@ -69,7 +70,7 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
     }
 
     if (file.size > MAX_AUDIO_SIZE_BYTES) {
-      onError('El archivo de audio supera el tamaño máximo permitido de 200 MB');
+      onError('El archivo supera el tamaño máximo permitido de 1 GB');
       return;
     }
 
@@ -160,7 +161,7 @@ export const AudioArea: React.FC<AudioAreaProps> = ({
             Arrastra tu archivo de audio aquí o haz clic para seleccionarlo
           </p>
           <p className="dropzone-hint">
-            Formatos admitidos: MP3, WAV, M4A, AAC, OGG, FLAC, WEBM, MP4 (Máximo 200 MB)
+            Formatos admitidos: MP3, WAV, M4A, AAC, OGG, FLAC, WEBM, MP4 (Máximo 1 GB)
           </p>
         </div>
       ) : isVideo ? (
